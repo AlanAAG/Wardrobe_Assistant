@@ -117,7 +117,7 @@ def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
     # 1. Filter for clean clothes first, handling empty/None values for "washed"
     filtered_items = [
         item for item in items
-        if (item.get("Washed") or "").lower() == washed_required.lower()
+        if (item.get("washed") or "").lower() == washed_required.lower()
     ]
     if not filtered_items:
         logging.warning(f"No items found with washed status '{washed_required}'.")
