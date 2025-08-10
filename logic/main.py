@@ -2,7 +2,7 @@ import json
 import os
 from dotenv import load_dotenv
 from weather_utils import get_weather_forecast
-from logic.outfit_logic import build_outfit
+from outfit_logic import build_outfit
 from notion_utils import (
     get_selected_aesthetic_from_output_db,
     get_output_page_id,
