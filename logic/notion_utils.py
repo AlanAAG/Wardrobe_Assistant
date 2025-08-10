@@ -69,8 +69,8 @@ def get_wardrobe_items(wardrobe_db_id):
         brand_select = props.get("Brand", {}).get("select", {})
         brand_name = brand_select.get("name") if brand_select else None
 
-        washed_multi = props.get("Washed", {}).get("multi_select", [])
-        washed_value = washed_multi[0].get("name") if washed_multi else None
+        washed_select = props.get("Washed", {}).get("select", {})
+        washed_value = washed_select.get("name") if washed_select else None
 
         color_multi = props.get("Color", {}).get("multi_select", [])
         color_names = [c.get("name") for c in color_multi]
