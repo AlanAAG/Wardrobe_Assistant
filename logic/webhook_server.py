@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import logging
 import os
 from dotenv import load_dotenv
-from notion_utils import notion
+from logic.notion_utils import notion
 
 # Import your existing modules (will create pipeline_orchestrator next)
 # from pipeline_orchestrator import run_outfit_pipeline
