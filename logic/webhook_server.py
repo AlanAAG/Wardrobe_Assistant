@@ -3,7 +3,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from logic.notion_utils import notion
-from pipeline_orchestrator import run_outfit_pipeline
+from logic.pipeline_orchestrator import run_outfit_pipeline
 
 load_dotenv()
 
