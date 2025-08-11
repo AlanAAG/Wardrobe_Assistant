@@ -1,3 +1,6 @@
 notion-client
 python-dotenv
 requests
+flask
+gunicorn
+supabase
