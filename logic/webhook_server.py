@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import logging
 import os
 from dotenv import load_dotenv
+from notion_utils import notion
 
 # Import your existing modules (will create pipeline_orchestrator next)
 # from pipeline_orchestrator import run_outfit_pipeline
@@ -87,8 +88,6 @@ def validate_trigger_conditions(page_id):
     Returns True if both conditions are met.
     """
     try:
-        from notion_utils import notion
-        
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
         
@@ -115,8 +114,6 @@ def get_trigger_data(page_id):
     Returns dict with 'aesthetics' and 'prompt' or None if failed.
     """
     try:
-        from notion_utils import notion
-        
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
         
