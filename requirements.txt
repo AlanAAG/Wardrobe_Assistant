@@ -1,6 +1,13 @@
-notion-client
-python-dotenv
-requests
-flask
-gunicorn
-supabase
+
+flask>=2.3.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+notion-client>=2.2.1
+supabase>=2.3.0
+
+# Optional: For better JSON handling and performance
+ujson>=5.8.0
+
+# Optional: For async operations (if you want to add async later)
+# asyncio
+# aiohttp
