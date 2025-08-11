@@ -67,7 +67,7 @@ def handle_notion_webhook():
         logging.info(f"Trigger data: aesthetic={trigger_data['aesthetics']}, prompt='{trigger_data['prompt']}'")
         
         # Run the outfit pipeline (will create this function next)
-        # result = run_outfit_pipeline(trigger_data)
+        result = run_outfit_pipeline(trigger_data)
         
         # For now, just return success
         return jsonify({
