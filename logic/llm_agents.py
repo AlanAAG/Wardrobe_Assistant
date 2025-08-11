@@ -20,7 +20,7 @@ class OutfitLLMAgents:
         self.gemini_api_key = os.getenv("GEMINI_AI_API_KEY")
         if self.gemini_api_key:
             genai.configure(api_key=self.gemini_api_key)
-            self.gemini_model = genai.GenerativeModel('gemini-pro')
+            self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
         else:
             logging.warning("GEMINI_AI_API_KEY not found")
             self.gemini_model = None
