@@ -207,6 +207,3 @@ marimo/_lsp/
 __marimo__/
 
 .env
-
-
-wardrobe_cache.json
