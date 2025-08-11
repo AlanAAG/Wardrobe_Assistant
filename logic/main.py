@@ -17,9 +17,10 @@ OUTPUT_DB_ID = os.getenv("NOTION_OUTFIT_LOG_DB_ID")
 CACHE_FILE = "wardrobe_cache.json"
 
 def load_wardrobe_cache():
-    if not os.path.exists(CACHE_FILE):
+    cache_path = os.path.join(os.path.dirname(__file__), "..", CACHE_FILE)
+    if not os.path.exists(cache_path):
         raise FileNotFoundError("Wardrobe cache not found. Please run sync_notion_to_cache.py first.")
-    with open(CACHE_FILE, "r", encoding="utf-8") as f:
+    with open(cache_path, "r", encoding="utf-8") as f:
         data = json.load(f)
         return data.get("wardrobe", [])
 
