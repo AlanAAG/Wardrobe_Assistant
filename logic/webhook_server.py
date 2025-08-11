@@ -32,13 +32,20 @@ def handle_notion_webhook():
         
         logging.info(f"Received webhook: {webhook_data}")
         
-        # Handle Notion webhook verification
+        # Handle Notion webhook verification (both challenge and verification_token)
         if "challenge" in webhook_data:
             challenge = webhook_data["challenge"]
             logging.info(f"Responding to Notion verification challenge: {challenge}")
             return jsonify({"challenge": challenge}), 200
         
-        # Extract page info from webhook
+        # Handle verification_token (ongoing verification checks)
+        if "verification_token" in webhook_data:
+            verification_token = webhook_data["verification_token"]
+            logging.info(f"Responding to Notion verification token: {verification_token}")
+            # Just return success - the token was already validated during webhook setup
+            return jsonify({"message": "Verification token received"}), 200
+        
+        # Extract page info from webhook (actual page update)
         page_id = webhook_data.get("page_id")
         if not page_id:
             logging.warning("Webhook missing page_id")
