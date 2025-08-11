@@ -312,3 +312,64 @@ def get_outfit_db_pages(output_db_id):
     except Exception as e:
         logging.error(f"Failed to get outfit DB pages: {e}")
         return []
+    
+def get_outfit_db_pages(output_db_id):
+    """
+    Get all pages from the outfit database with their properties.
+    Returns a list of page data including prompts and aesthetics.
+    """
+    try:
+        results = query_database(output_db_id)
+        pages = []
+
+        for result in results:
+            props = result.get("properties", {})
+
+            # Get Desired Aesthetic
+            aesthetic_prop = props.get("Desired Aesthetic", {})
+            multi_select = aesthetic_prop.get("multi_select", [])
+            aesthetics = [tag.get("name") for tag in multi_select]
+
+            # Get Prompt text
+            prompt_prop = props.get("Prompt", {})
+            rich_text = prompt_prop.get("rich_text", [])
+            prompt_text = "".join([t.get("plain_text", "") for t in rich_text]) if rich_text else ""
+
+            # Get Outfit Date
+            date_prop = props.get("Outfit Date", {})
+            outfit_date = date_prop.get("date", {}).get("start") if date_prop.get("date") else None
+
+            pages.append({
+                "id": result.get("id"),
+                "aesthetics": aesthetics,
+                "prompt": prompt_text,
+                "date": outfit_date,
+                "last_edited_time": result.get("last_edited_time")
+            })
+
+        return pages
+    except Exception as e:
+        logging.error(f"Failed to get outfit DB pages: {e}")
+        return []
+
+def clear_trigger_fields(page_id):
+    """
+    Clears the 'Desired Aesthetic' and 'Prompt' fields in a Notion page
+    to reset the trigger conditions for the next outfit request.
+    """
+    try:
+        properties = {
+            "Desired Aesthetic": {
+                "multi_select": []
+            },
+            "Prompt": {
+                "rich_text": []
+            }
+        }
+        
+        notion.pages.update(page_id=page_id, properties=properties)
+        logging.info(f"Successfully cleared trigger fields for page {page_id}")
+        
+    except Exception as e:
+        logging.error(f"Failed to clear trigger fields for page {page_id}: {e}")
+        raise

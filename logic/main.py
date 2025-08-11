@@ -8,6 +8,7 @@ from notion_utils import (
     get_output_page_id,
     post_outfit_to_notion_page,
     clear_page_content,
+    clear_trigger_fields,
 )
 
 load_dotenv()
@@ -57,7 +58,10 @@ def main():
     print("Posting outfit to Notion...")
     post_outfit_to_notion_page(output_page_id, outfit)
 
-    print("✅ Done! Your new outfit has been posted to Notion.")
+    print("Clearing trigger fields to reset for next use...")
+    clear_trigger_fields(output_page_id)
+
+    print("✅ Done! Your new outfit has been posted to Notion and fields cleared.")
 
 if __name__ == "__main__":
     main()
