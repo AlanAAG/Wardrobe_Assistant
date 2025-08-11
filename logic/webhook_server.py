@@ -20,6 +20,7 @@ logging.basicConfig(
 def handle_notion_webhook():
     """
     Handles incoming Notion webhooks and triggers outfit generation pipeline.
+    Also handles Notion's webhook verification process.
     """
     try:
         # Get webhook data
@@ -30,6 +31,12 @@ def handle_notion_webhook():
             return jsonify({"error": "No JSON data received"}), 400
         
         logging.info(f"Received webhook: {webhook_data}")
+        
+        # Handle Notion webhook verification
+        if "challenge" in webhook_data:
+            challenge = webhook_data["challenge"]
+            logging.info(f"Responding to Notion verification challenge: {challenge}")
+            return jsonify({"challenge": challenge}), 200
         
         # Extract page info from webhook
         page_id = webhook_data.get("page_id")
