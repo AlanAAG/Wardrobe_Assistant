@@ -46,10 +46,13 @@ def handle_notion_webhook():
             return jsonify({"message": "Verification token received"}), 200
         
         # Extract page info from webhook (actual page update)
-        page_id = webhook_data.get("page_id")
+        # For page.properties_updated events, page ID is in entity.id
+        entity = webhook_data.get("entity", {})
+        page_id = entity.get("id")
+        
         if not page_id:
-            logging.warning("Webhook missing page_id")
-            return jsonify({"error": "Missing page_id in webhook"}), 400
+            logging.warning("Webhook missing entity.id (page_id)")
+            return jsonify({"error": "Missing entity.id in webhook"}), 400
         
         # Validate trigger conditions (both fields not empty)
         if not validate_trigger_conditions(page_id):
