@@ -2,9 +2,9 @@ import json
 import os
 import logging
 from dotenv import load_dotenv
-from weather_utils import get_weather_forecast
-from outfit_logic import build_outfit
-from notion_utils import (
+from logic.weather_utils import get_weather_forecast
+from logic.outfit_logic import build_outfit
+from logic.notion_utils import (
     post_outfit_to_notion_page,
     clear_page_content,
     clear_trigger_fields,
