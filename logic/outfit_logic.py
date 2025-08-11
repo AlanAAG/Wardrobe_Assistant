@@ -76,12 +76,44 @@ def filter_items_by_color(items, base_colors):
     ]
 
 
+def filter_items_by_weather(items, is_hot):
+    """
+    Filters items based on their weather tags and current weather conditions.
+    
+    Args:
+        items: List of clothing items with 'weather' tag lists
+        is_hot: Boolean indicating if it's hot weather
+    
+    Returns:
+        List of items suitable for the current weather
+    """
+    weather_tag = "Hot" if is_hot else "Cold"
+    
+    suitable_items = []
+    for item in items:
+        item_weather_tags = item.get("weather", [])
+        # Convert to lowercase for case-insensitive comparison
+        item_weather_lower = [tag.lower() for tag in item_weather_tags]
+        
+        # Include item if:
+        # 1. It has the matching weather tag, OR
+        # 2. It has both Hot and Cold tags (versatile item), OR
+        # 3. It has no weather tags (assume versatile)
+        if (weather_tag.lower() in item_weather_lower or 
+            (len(item_weather_lower) >= 2 and "hot" in item_weather_lower and "cold" in item_weather_lower) or
+            len(item_weather_tags) == 0):
+            suitable_items.append(item)
+    
+    return suitable_items
+
+
 def pick_one(items):
     """Randomly picks one item from a list."""
     return random.choice(items) if items else None
 
 
 def pick_upper_body(items, desired_aesthetic, base_colors):
+    """Pick upper body item - signature maintained for compatibility."""
     candidates = [i for i in items if i["category"] in UPPER_BODY]
     candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
     candidates = filter_items_by_color(candidates, base_colors)
@@ -89,14 +121,20 @@ def pick_upper_body(items, desired_aesthetic, base_colors):
 
 
 def pick_lower_body(items, hot, desired_aesthetic, base_colors):
-    lower_body_cats = LOWER_BODY_HOT if hot else LOWER_BODY_COLD
+    """Pick lower body item - signature maintained, but now uses weather tags instead of category filtering."""
+    # First filter by category (keep all lower body categories)
+    lower_body_cats = LOWER_BODY_HOT  # Use the full set since we'll filter by weather tags
     candidates = [i for i in items if i["category"] in lower_body_cats]
+    
+    # Apply weather filtering based on individual item tags
+    candidates = filter_items_by_weather(candidates, hot)
     candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
     candidates = filter_items_by_color(candidates, base_colors)
     return pick_one(candidates)
 
 
 def pick_outerwear(items, desired_aesthetic, base_colors):
+    """Pick outerwear item - signature maintained for compatibility."""
     candidates = [i for i in items if i["category"] in OUTERWEAR]
     candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
     candidates = filter_items_by_color(candidates, base_colors)
@@ -104,6 +142,7 @@ def pick_outerwear(items, desired_aesthetic, base_colors):
 
 
 def pick_footwear(items, desired_aesthetic, base_colors):
+    """Pick footwear - signature maintained for compatibility."""
     candidates = [i for i in items if i["category"] in FOOTWEAR]
     candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
     candidates = filter_items_by_color(candidates, base_colors)
@@ -113,6 +152,7 @@ def pick_footwear(items, desired_aesthetic, base_colors):
 def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
     """
     Builds a complete, color-coordinated outfit from available items.
+    Now uses individual weather tags while maintaining function signature.
     """
     # 1. Filter for clean clothes first, handling empty/None values for "washed"
     filtered_items = [
@@ -123,8 +163,14 @@ def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
         logging.warning(f"No items found with washed status '{washed_required}'.")
         return []
 
+    # Apply weather filtering to all items upfront
+    weather_filtered_items = filter_items_by_weather(filtered_items, hot)
+    if not weather_filtered_items:
+        logging.warning(f"No items found suitable for {'hot' if hot else 'cold'} weather.")
+        return []
+
     # 2. Pick an upper body item to set the base color scheme
-    upper = pick_upper_body(filtered_items, desired_aesthetic, base_colors=[])
+    upper = pick_upper_body(weather_filtered_items, desired_aesthetic, base_colors=[])
     if not upper:
         logging.warning("No upper body garment found for outfit.")
         return []
@@ -132,23 +178,22 @@ def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
     base_colors = upper.get("color", [])
 
     # 3. Pick other items that are compatible with the upper body item
-    lower = pick_lower_body(filtered_items, hot, desired_aesthetic, base_colors)
+    lower = pick_lower_body(weather_filtered_items, hot, desired_aesthetic, base_colors)
     if not lower:
         logging.warning("No lower body garment found for outfit.")
         return []
 
-    footwear = pick_footwear(filtered_items, desired_aesthetic, base_colors)
+    footwear = pick_footwear(weather_filtered_items, desired_aesthetic, base_colors)
     if not footwear:
         logging.warning("No footwear found for outfit.")
         return []
 
     outfit = [upper]
 
-    # 4. Add outerwear if it's not hot
-    if not hot:
-        outer = pick_outerwear(filtered_items, desired_aesthetic, base_colors)
-        if outer:
-            outfit.append(outer)
+    # 4. Add outerwear - now checks weather tags instead of just temperature
+    outer = pick_outerwear(weather_filtered_items, desired_aesthetic, base_colors)
+    if outer:
+        outfit.append(outer)
 
     outfit.append(lower)
     outfit.append(footwear)
