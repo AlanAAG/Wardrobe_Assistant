@@ -10,9 +10,9 @@ google-generativeai>=0.3.0
 groq>=0.4.0
 
 # Async dependencies
-asyncio
+async
 aiohttp>=3.8.0
-asyncio-timeout>=4.0.2
+async-timeout>=4.0.2
 
 # Optional: For better JSON handling and performance
 ujson>=5.8.0
