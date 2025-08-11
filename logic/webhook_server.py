@@ -3,9 +3,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from logic.notion_utils import notion
-
-# Import your existing modules (will create pipeline_orchestrator next)
-# from pipeline_orchestrator import run_outfit_pipeline
+from pipeline_orchestrator import run_outfit_pipeline
 
 load_dotenv()
 
