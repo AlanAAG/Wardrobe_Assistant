@@ -1,9 +1,12 @@
 from flask import Flask, request, jsonify
 import logging
 import os
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 from logic.notion_utils import notion
-from logic.pipeline_orchestrator import run_outfit_pipeline
+from logic.pipeline_orchestrator import run_enhanced_outfit_pipeline
 
 load_dotenv()
 
@@ -15,11 +18,14 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+# Create thread pool for async operations
+executor = ThreadPoolExecutor(max_workers=3)
+
 @app.route('/webhook/notion', methods=['POST'])
 def handle_notion_webhook():
     """
     Handles incoming Notion webhooks and triggers outfit generation pipeline.
-    Also handles Notion's webhook verification process.
+    Responds quickly to webhook, processes outfit generation in background.
     """
     try:
         # Get webhook data
@@ -41,11 +47,9 @@ def handle_notion_webhook():
         if "verification_token" in webhook_data:
             verification_token = webhook_data["verification_token"]
             logging.info(f"Responding to Notion verification token: {verification_token}")
-            # Just return success - the token was already validated during webhook setup
             return jsonify({"message": "Verification token received"}), 200
         
         # Extract page info from webhook (actual page update)
-        # For page.properties_updated events, page ID is in entity.id
         entity = webhook_data.get("entity", {})
         page_id = entity.get("id")
         
@@ -66,19 +70,55 @@ def handle_notion_webhook():
         
         logging.info(f"Trigger data: aesthetic={trigger_data['aesthetics']}, prompt='{trigger_data['prompt']}'")
         
-        # Run the outfit pipeline (will create this function next)
-        result = run_outfit_pipeline(trigger_data)
+        # **KEY CHANGE: Start async processing in background thread**
+        # Respond immediately to webhook, process outfit generation asynchronously
+        future = executor.submit(run_async_outfit_pipeline, trigger_data)
         
-        # For now, just return success
+        # Quick response to Notion webhook (prevents timeout)
         return jsonify({
-            "message": "Webhook received successfully",
+            "message": "Webhook received - outfit generation started",
             "page_id": page_id,
-            "trigger_data": trigger_data
+            "status": "processing",
+            "aesthetic": trigger_data['aesthetics'],
+            "prompt_preview": trigger_data['prompt'][:50] + "..." if len(trigger_data['prompt']) > 50 else trigger_data['prompt']
         }), 200
         
     except Exception as e:
         logging.error(f"Webhook error: {e}")
         return jsonify({"error": "Internal server error"}), 500
+
+def run_async_outfit_pipeline(trigger_data):
+    """
+    Wrapper to run async pipeline in a separate thread.
+    This prevents webhook timeouts while allowing async processing.
+    """
+    try:
+        logging.info("Starting async outfit pipeline in background...")
+        
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            # Run the async pipeline
+            result = loop.run_until_complete(run_enhanced_outfit_pipeline(trigger_data))
+            
+            # Log the result
+            if result["success"]:
+                method = result["generation_method"]
+                items = result["outfit_items"]
+                logging.info(f"✅ Async pipeline completed successfully!")
+                logging.info(f"   Method: {method}")
+                logging.info(f"   Items: {items}")
+                logging.info(f"   Page: {result['page_id']}")
+            else:
+                logging.error(f"❌ Async pipeline failed: {result['error']}")
+                
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        logging.error(f"Error in async outfit pipeline: {e}")
 
 def validate_trigger_conditions(page_id):
     """
