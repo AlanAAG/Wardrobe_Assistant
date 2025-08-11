@@ -5,6 +5,9 @@ requests>=2.31.0
 notion-client>=2.2.1
 supabase>=2.3.0
 
+# Production server
+gunicorn>=21.0.0
+
 # AI/LLM dependencies
 google-generativeai>=0.3.0
 groq>=0.4.0
