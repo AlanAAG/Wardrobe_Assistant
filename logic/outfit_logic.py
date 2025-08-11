@@ -113,39 +113,83 @@ def pick_one(items):
 
 
 def pick_upper_body(items, desired_aesthetic, base_colors):
-    """Pick upper body item - signature maintained for compatibility."""
+    """Pick upper body item with aesthetic fallback - signature maintained for compatibility."""
     candidates = [i for i in items if i["category"] in UPPER_BODY]
-    candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
-    candidates = filter_items_by_color(candidates, base_colors)
+    
+    # Try with aesthetic + color filters first
+    aesthetic_filtered = filter_items_by_aesthetic(candidates, desired_aesthetic)
+    color_filtered = filter_items_by_color(aesthetic_filtered, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Fallback: ignore aesthetic, keep color compatibility
+    color_filtered = filter_items_by_color(candidates, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Last resort: any upper body item
     return pick_one(candidates)
 
 
 def pick_lower_body(items, hot, desired_aesthetic, base_colors):
-    """Pick lower body item - signature maintained, but now uses weather tags instead of category filtering."""
+    """Pick lower body item with aesthetic fallback - signature maintained, but now uses weather tags instead of category filtering."""
     # First filter by category (keep all lower body categories)
     lower_body_cats = LOWER_BODY_HOT  # Use the full set since we'll filter by weather tags
     candidates = [i for i in items if i["category"] in lower_body_cats]
     
     # Apply weather filtering based on individual item tags
     candidates = filter_items_by_weather(candidates, hot)
-    candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
-    candidates = filter_items_by_color(candidates, base_colors)
+    
+    # Try with aesthetic + color filters first
+    aesthetic_filtered = filter_items_by_aesthetic(candidates, desired_aesthetic)
+    color_filtered = filter_items_by_color(aesthetic_filtered, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Fallback: ignore aesthetic, keep color compatibility
+    color_filtered = filter_items_by_color(candidates, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Last resort: any weather-appropriate lower body item
     return pick_one(candidates)
 
 
 def pick_outerwear(items, desired_aesthetic, base_colors):
-    """Pick outerwear item - signature maintained for compatibility."""
+    """Pick outerwear item with aesthetic fallback - signature maintained for compatibility."""
     candidates = [i for i in items if i["category"] in OUTERWEAR]
-    candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
-    candidates = filter_items_by_color(candidates, base_colors)
+    
+    # Try with aesthetic + color filters first
+    aesthetic_filtered = filter_items_by_aesthetic(candidates, desired_aesthetic)
+    color_filtered = filter_items_by_color(aesthetic_filtered, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Fallback: ignore aesthetic, keep color compatibility
+    color_filtered = filter_items_by_color(candidates, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Last resort: any outerwear item
     return pick_one(candidates)
 
 
 def pick_footwear(items, desired_aesthetic, base_colors):
-    """Pick footwear - signature maintained for compatibility."""
+    """Pick footwear with aesthetic fallback - signature maintained for compatibility."""
     candidates = [i for i in items if i["category"] in FOOTWEAR]
-    candidates = filter_items_by_aesthetic(candidates, desired_aesthetic)
-    candidates = filter_items_by_color(candidates, base_colors)
+    
+    # Try with aesthetic + color filters first
+    aesthetic_filtered = filter_items_by_aesthetic(candidates, desired_aesthetic)
+    color_filtered = filter_items_by_color(aesthetic_filtered, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Fallback: ignore aesthetic, keep color compatibility
+    color_filtered = filter_items_by_color(candidates, base_colors)
+    if color_filtered:
+        return pick_one(color_filtered)
+    
+    # Last resort: any footwear available
     return pick_one(candidates)
 
 
@@ -153,6 +197,7 @@ def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
     """
     Builds a complete, color-coordinated outfit from available items.
     Now uses individual weather tags while maintaining function signature.
+    All categories use 3-tier fallback: aesthetic+color -> color only -> any item
     """
     # 1. Filter for clean clothes first, handling empty/None values for "washed"
     filtered_items = [
@@ -177,7 +222,7 @@ def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
 
     base_colors = upper.get("color", [])
 
-    # 3. Pick other items that are compatible with the upper body item
+    # 3. Pick other items that are compatible with the upper body item (all use fallback logic)
     lower = pick_lower_body(weather_filtered_items, hot, desired_aesthetic, base_colors)
     if not lower:
         logging.warning("No lower body garment found for outfit.")
@@ -190,10 +235,11 @@ def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
 
     outfit = [upper]
 
-    # 4. Add outerwear - now checks weather tags instead of just temperature
-    outer = pick_outerwear(weather_filtered_items, desired_aesthetic, base_colors)
-    if outer:
-        outfit.append(outer)
+    # 4. Add outerwear for cold weather (also uses 3-tier fallback logic)
+    if not hot:
+        outer = pick_outerwear(weather_filtered_items, desired_aesthetic, base_colors)
+        if outer:
+            outfit.append(outer)
 
     outfit.append(lower)
     outfit.append(footwear)
