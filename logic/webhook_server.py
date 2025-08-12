@@ -175,6 +175,48 @@ def get_trigger_data(page_id):
         logging.error(f"Error extracting trigger data: {e}")
         return None
 
+@app.route('/debug/env', methods=['GET'])
+def debug_webhook_environment():
+    """Debug endpoint to check environment in webhook context"""
+    try:
+        from logic.supabase_client import supabase_client
+        
+        # Check environment
+        supabase_url = os.getenv("SUPABASE_PROJECT_URL")
+        supabase_key = os.getenv("SUPABASE_ANON_KEY")
+        
+        debug_info = {
+            "supabase_url": supabase_url,
+            "key_preview": f"{supabase_key[:20]}...{supabase_key[-8:]}" if supabase_key else "None",
+            "key_length": len(supabase_key) if supabase_key else 0,
+            "key_type": "service_role" if supabase_key and supabase_key.startswith('eyJ') else "anon_or_other",
+            "client_connected": supabase_client.is_connected(),
+            "cwd": os.getcwd(),
+            "env_file_exists": os.path.exists('.env')
+        }
+        
+        # Test Supabase connection
+        if supabase_client.is_connected():
+            try:
+                response = supabase_client.client.table('wardrobe_items').select('id').limit(1).execute()
+                debug_info["supabase_test"] = {
+                    "success": True,
+                    "data_length": len(response.data),
+                    "error": getattr(response, 'error', None),
+                    "raw_response": str(response)[:200]  # First 200 chars
+                }
+            except Exception as e:
+                debug_info["supabase_test"] = {
+                    "success": False,
+                    "error": str(e),
+                    "error_type": str(type(e))
+                }
+        
+        return jsonify(debug_info), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint for monitoring."""
