@@ -268,69 +268,179 @@ REASONING: [Brief explanation]"""
         
         return "\n".join(formatted)
     
-    def _parse_llm_response(self, response_text: str, available_items: Dict) -> Optional[List[Dict]]:
-        """
-        Parse LLM response to extract selected outfit items
+def _parse_llm_response(self, response_text: str, available_items: Dict) -> Optional[List[Dict]]:
+    """
+    Parse LLM response to extract selected outfit items with smart name + category matching
+    
+    Args:
+        response_text: Raw LLM response
+        available_items: Dictionary of available items by category
         
-        Args:
-            response_text: Raw LLM response
-            available_items: Dictionary of available items by category
-            
-        Returns:
-            List of selected item dictionaries or None if parsing fails
-        """
-        try:
-            selected_items = []
-            
-            # Create a lookup dictionary for quick item finding
-            all_items = {}
-            for category, items in available_items.items():
-                for item in items:
-                    all_items[item['item'].lower().strip()] = item
-            
-            # Extract outfit section
-            if "SELECTED_OUTFIT:" in response_text:
-                outfit_section = response_text.split("SELECTED_OUTFIT:")[1]
-                if "REASONING:" in outfit_section:
-                    outfit_section = outfit_section.split("REASONING:")[0]
+    Returns:
+        List of selected item dictionaries or None if parsing fails
+    """
+    try:
+        import re
+        selected_items = []
+        
+        # Create lookup dictionaries for efficient searching
+        # Group by category for category-specific lookups
+        items_by_category = {}
+        all_items_lookup = {}
+        
+        for category, items in available_items.items():
+            for item in items:
+                item_name = item['item'].lower().strip()
+                item_category = item['category']
                 
-                lines = outfit_section.strip().split('\n')
+                # Add to category-specific lookup
+                if item_category not in items_by_category:
+                    items_by_category[item_category] = {}
+                items_by_category[item_category][item_name] = item
                 
-                for line in lines:
-                    line = line.strip()
-                    if ':' in line:
-                        category, item_name = line.split(':', 1)
-                        category = category.strip().upper()
-                        item_name = item_name.strip()
+                # Add to global lookup as backup
+                all_items_lookup[item_name] = item
+        
+        # Extract outfit section
+        if "SELECTED_OUTFIT:" in response_text:
+            outfit_section = response_text.split("SELECTED_OUTFIT:")[1]
+            if "REASONING:" in outfit_section:
+                outfit_section = outfit_section.split("REASONING:")[0]
+            
+            lines = outfit_section.strip().split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if ':' in line:
+                    category_type, item_selection = line.split(':', 1)
+                    category_type = category_type.strip().upper()
+                    item_selection = item_selection.strip()
+                    
+                    # Parse item selection using regex to extract name and category
+                    # Handles formats like: "Black Slim Pants (Chinos)" or just "Black Slim Pants"
+                    match = re.match(r'^(.+?)\s*\(([^)]+)\)$', item_selection)
+                    
+                    if match:
+                        # Format: "Item Name (Category)"
+                        item_name = match.group(1).strip()
+                        expected_category = match.group(2).strip()
                         
-                        # Find the item in available items
-                        item_key = item_name.lower().strip()
-                        if item_key in all_items:
-                            selected_items.append(all_items[item_key])
-                            logging.info(f"Selected {category}: {item_name}")
+                        # Try category-specific lookup first (most accurate)
+                        item_name_lower = item_name.lower()
+                        if expected_category in items_by_category:
+                            if item_name_lower in items_by_category[expected_category]:
+                                found_item = items_by_category[expected_category][item_name_lower]
+                                selected_items.append(found_item)
+                                logging.info(f"Selected {category_type}: {item_name} ({expected_category}) ✅")
+                                continue
+                        
+                        # Fallback: Try fuzzy matching within the expected category
+                        if expected_category in items_by_category:
+                            fuzzy_match = self._fuzzy_match_item(item_name_lower, items_by_category[expected_category])
+                            if fuzzy_match:
+                                selected_items.append(fuzzy_match)
+                                logging.info(f"Selected {category_type}: {item_name} ({expected_category}) ✅ (fuzzy match)")
+                                continue
+                        
+                        # Last resort: Global lookup (without category validation)
+                        if item_name_lower in all_items_lookup:
+                            found_item = all_items_lookup[item_name_lower]
+                            selected_items.append(found_item)
+                            logging.warning(f"Selected {category_type}: {item_name} ⚠️  (category mismatch: expected {expected_category}, got {found_item['category']})")
+                            continue
+                        
+                        logging.warning(f"Could not find item: {item_name} ({expected_category})")
+                    
+                    else:
+                        # Format: "Item Name" (no category specified)
+                        item_name = item_selection
+                        item_name_lower = item_name.lower().strip()
+                        
+                        # Try global lookup
+                        if item_name_lower in all_items_lookup:
+                            found_item = all_items_lookup[item_name_lower]
+                            selected_items.append(found_item)
+                            logging.info(f"Selected {category_type}: {item_name} ✅")
                         else:
-                            logging.warning(f"Could not find item: {item_name}")
-            
-            # Validate outfit completeness
-            categories = {item['category'] for item in selected_items}
-            required_categories = {'Polo', 'T-shirt', 'Sport T-shirt', 'Shirt'}  # At least one top
-            has_top = bool(categories.intersection(required_categories))
-            
-            bottom_categories = {'Cargo Pants', 'Chinos', 'Jeans', 'Joggers', 'Pants', 'Shorts'}
-            has_bottom = bool(categories.intersection(bottom_categories))
-            
-            footwear_categories = {'Shoes', 'Sneakers'}
-            has_footwear = bool(categories.intersection(footwear_categories))
-            
-            if not (has_top and has_bottom and has_footwear):
-                logging.warning(f"Incomplete outfit: top={has_top}, bottom={has_bottom}, footwear={has_footwear}")
-                return None
-            
-            return selected_items if selected_items else None
-            
-        except Exception as e:
-            logging.error(f"Error parsing LLM response: {e}")
+                            # Try fuzzy matching across all items
+                            fuzzy_match = self._fuzzy_match_item(item_name_lower, all_items_lookup)
+                            if fuzzy_match:
+                                selected_items.append(fuzzy_match)
+                                logging.info(f"Selected {category_type}: {item_name} ✅ (fuzzy match)")
+                            else:
+                                logging.warning(f"Could not find item: {item_name}")
+        
+        # Validate outfit completeness
+        if not self._validate_outfit_completeness(selected_items):
             return None
+        
+        return selected_items if selected_items else None
+        
+    except Exception as e:
+        logging.error(f"Error parsing LLM response: {e}")
+        return None
+
+def _fuzzy_match_item(self, target_name: str, items_dict: Dict) -> Optional[Dict]:
+    """
+    Attempt fuzzy matching for item names to handle slight variations
+    
+    Args:
+        target_name: The item name to search for (lowercase)
+        items_dict: Dictionary of {item_name: item_data}
+        
+    Returns:
+        Matching item dictionary or None
+    """
+    # Try partial matching (target is contained in item name or vice versa)
+    for item_name, item_data in items_dict.items():
+        # Check if names contain each other (handles variations like "Light Blue" vs "LightBlue")
+        if target_name in item_name or item_name in target_name:
+            if abs(len(target_name) - len(item_name)) <= 3:  # Allow small length differences
+                return item_data
+    
+    # Try word-based matching (split by spaces and check overlap)
+    target_words = set(target_name.split())
+    for item_name, item_data in items_dict.items():
+        item_words = set(item_name.split())
+        
+        # If most words match, consider it a match
+        if target_words and item_words:
+            overlap = len(target_words.intersection(item_words))
+            min_words = min(len(target_words), len(item_words))
+            
+            # Require at least 70% word overlap
+            if overlap / min_words >= 0.7:
+                return item_data
+    
+    return None
+
+def _validate_outfit_completeness(self, selected_items: List[Dict]) -> bool:
+    """
+    Validate that the outfit has the required pieces
+    
+    Args:
+        selected_items: List of selected item dictionaries
+        
+    Returns:
+        True if outfit is complete, False otherwise
+    """
+    categories = {item['category'] for item in selected_items}
+    
+    # Required categories
+    required_tops = {'Polo', 'T-shirt', 'Sport T-shirt', 'Shirt'}
+    required_bottoms = {'Cargo Pants', 'Chinos', 'Jeans', 'Joggers', 'Pants', 'Shorts'}
+    required_footwear = {'Shoes', 'Sneakers'}
+    
+    has_top = bool(categories.intersection(required_tops))
+    has_bottom = bool(categories.intersection(required_bottoms))
+    has_footwear = bool(categories.intersection(required_footwear))
+    
+    if not (has_top and has_bottom and has_footwear):
+        logging.warning(f"Incomplete outfit: top={has_top}, bottom={has_bottom}, footwear={has_footwear}")
+        logging.warning(f"Selected categories: {categories}")
+        return False
+    
+    return True
 
 # Create global instance
 outfit_llm_agents = OutfitLLMAgents()
