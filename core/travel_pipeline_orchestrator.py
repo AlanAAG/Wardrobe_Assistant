@@ -76,9 +76,12 @@ class TravelPipelineOrchestrator:
         self._start_time = time.time()
         
         logging.info("🔧 Initializing TravelPipelineOrchestrator...")
-        
-        # Environment variable validation
+            
+    async def ensure_ready(self):
+        """Validate env and confirm Notion connectivity RIGHT BEFORE running."""
         self._validate_environment()
+        await self._test_notion_connectivity()
+
         
         # Configuration setup
         self.packing_guide_page_id = os.getenv("NOTION_PACKING_GUIDE_ID")
@@ -93,9 +96,6 @@ class TravelPipelineOrchestrator:
         # Performance tracking
         self.metrics = PipelineMetrics()
         self.current_stage = PipelineStage.INIT
-        
-        # Test Notion connectivity
-        self._test_notion_connectivity()
         
         logging.info("✅ TravelPipelineOrchestrator initialized successfully")
         logging.info(f"   Initialization time: {(time.time() - self._start_time) * 1000:.1f}ms")
@@ -131,6 +131,9 @@ class TravelPipelineOrchestrator:
             raise ConnectionError(error_msg)
     
     async def run_travel_packing_pipeline(self, trigger_data: Dict) -> Dict:
+
+        await self.ensure_ready()
+
         """
         Main pipeline execution with comprehensive monitoring and error handling.
         

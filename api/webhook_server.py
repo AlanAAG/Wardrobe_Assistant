@@ -5,6 +5,7 @@ import asyncio
 import threading
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from dotenv import load_dotenv
 from data.notion_utils import notion
 from core.pipeline_orchestrator import run_enhanced_outfit_pipeline
@@ -120,71 +121,87 @@ def handle_unified_notion_webhook():
 
 def determine_workflow_type(page_id):
     """
-    🎯 SMART ROUTING: Analyze page properties to determine workflow type
-    Enhanced with comprehensive debugging
-    
-    Returns:
-        - "outfit": if outfit generation should be triggered
-        - "travel": if travel packing should be triggered  
-        - None: if no workflow should be triggered
+    Decide which workflow to run for the given Notion page.
+
+    Travel (NEW default): run when ALL are true
+      - 'Destinations'   not empty
+      - 'Travel Preferences' not empty
+      - 'Travel Dates'   has start (and ideally end)
+
+    The old manual travel checkbox still works as an override:
+      - 'Generate' / 'Generate Travel Packing' / 'Generate Packing' / 'Travel Generate' == True
+
+    Outfit: run when BOTH are true:
+      - 'Desired Aesthetic' not empty
+      - 'Prompt' rich_text not empty
     """
     try:
-        logging.info(f"🔍 Determining workflow type for page: {page_id}")
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
-        
-        # LOG ALL PROPERTIES FOR DEBUGGING
-        logging.info(f"🔍 DEBUG: All properties for page {page_id}:")
-        for prop_name, prop_data in props.items():
-            prop_type = prop_data.get("type", "unknown")
-            if prop_type == "checkbox":
-                value = prop_data.get("checkbox", False)
-                logging.info(f"   📋 {prop_name} (checkbox): {value}")
-            elif prop_type == "multi_select":
-                values = [tag.get("name") for tag in prop_data.get("multi_select", [])]
-                logging.info(f"   🏷️  {prop_name} (multi_select): {values}")
-            elif prop_type == "rich_text":
-                text = "".join([t.get("plain_text", "") for t in prop_data.get("rich_text", [])])
-                logging.info(f"   📝 {prop_name} (rich_text): '{text[:50]}...' (length: {len(text)})")
-            else:
-                logging.info(f"   🔧 {prop_name} ({prop_type}): {prop_data}")
-        
-        # Check for travel workflow triggers (multiple possible property names)
-        travel_triggers = ["Generate", "Generate Travel Packing", "Generate Packing", "Travel Generate"]
-        travel_generate = False
-        
-        for trigger_name in travel_triggers:
-            if trigger_name in props:
-                travel_generate = props.get(trigger_name, {}).get("checkbox", False)
-                logging.info(f"🔍 Found travel trigger '{trigger_name}': {travel_generate}")
-                if travel_generate:
-                    break
-        
-        if travel_generate:
-            logging.info(f"🧳 Travel packing workflow detected for page {page_id}")
+
+        # manual travel override (still supported)
+        for name in ["Generate", "Generate Travel Packing", "Generate Packing", "Travel Generate"]:
+            if name in props and props[name].get("type") == "checkbox":
+                if props[name].get("checkbox", False):
+                    logging.info("🧳 Travel override checkbox detected.")
+                    return "travel"
+
+        # travel auto-trigger (per your spec)
+        dest_ok = _prop_nonempty(props, ["Destinations", "Locations", "Cities"])
+        prefs_ok = _prop_nonempty(props, ["Travel Preferences", "Trip Preferences", "Preferences"])
+        dates_ok = _date_present(props, ["Travel Dates", "Trip Dates", "Dates"])
+
+        logging.info(f"🔍 Travel triggers - destinations:{dest_ok} prefs:{prefs_ok} dates:{dates_ok}")
+        if dest_ok and prefs_ok and dates_ok:
             return "travel"
-        
-        # Check for outfit workflow triggers
+
+        # outfit trigger (unchanged)
         aesthetic_prop = props.get("Desired Aesthetic", {})
         prompt_prop = props.get("Prompt", {})
-        
+
         has_aesthetic = len(aesthetic_prop.get("multi_select", [])) > 0
         has_prompt = len(prompt_prop.get("rich_text", [])) > 0 and any(
             t.get("plain_text", "").strip() for t in prompt_prop.get("rich_text", [])
         )
-        
-        logging.info(f"🔍 Outfit triggers - aesthetic: {has_aesthetic}, prompt: {has_prompt}")
-        
+
+        logging.info(f"🔍 Outfit triggers - aesthetic:{has_aesthetic} prompt:{has_prompt}")
         if has_aesthetic and has_prompt:
-            logging.info(f"👕 Outfit generation workflow detected for page {page_id}")
             return "outfit"
-        
-        logging.info(f"❌ No workflow triggers found for page {page_id}")
+
         return None
-        
     except Exception as e:
-        logging.error(f"❌ Error determining workflow type for page {page_id}: {e}", exc_info=True)
+        logging.error(f"❌ Error determining workflow type for {page_id}: {e}", exc_info=True)
         return None
+
+
+def _prop_nonempty(props, candidates):
+    """True if any candidate property is present with non-empty user content."""
+    for name in candidates:
+        p = props.get(name)
+        if not p:
+            continue
+        typ = p.get("type")
+        if typ == "multi_select" and p.get("multi_select"):
+            return True
+        if typ == "rich_text" and any(t.get("plain_text", "").strip() for t in p.get("rich_text", [])):
+            return True
+        if typ == "relation" and p.get("relation"):
+            return True
+        if typ == "title" and any(t.get("plain_text", "").strip() for t in p.get("title", [])):
+            return True
+    return False
+
+
+def _date_present(props, candidates):
+    """True if any candidate date property has a start date."""
+    for name in candidates:
+        p = props.get(name)
+        if p and p.get("type") == "date":
+            d = p.get("date") or {}
+            if (d.get("start") or "").strip():
+                return True
+    return False
+
 
 def handle_outfit_workflow(page_id):
     """Handle outfit generation workflow (existing logic)"""
@@ -312,151 +329,122 @@ def get_outfit_trigger_data(page_id):
 
 def get_travel_trigger_data(page_id):
     """
-    Extract travel packing configuration from your AI Travel Planner page
-    Enhanced with debugging and flexible property detection
+    Build the trigger_data for the travel pipeline using Notion page fields:
+      - Destinations (multi_select / relation / title/rich_text as CSV)
+      - Travel Preferences (multi_select or rich_text)
+      - Travel Dates (date range)
     """
-    try:
-        logging.info(f"🧳 Extracting travel trigger data for page {page_id}")
-        page = notion.pages.retrieve(page_id=page_id)
-        props = page.get("properties", {})
-        
-        # Log all properties for debugging
-        logging.info(f"🧳 Available properties: {list(props.keys())}")
-        
-        # Try multiple possible property names for travel preferences
-        preferences_prop_names = ["Travel Preferences", "Preferences", "Notes", "Description"]
-        preferences_text = ""
-        
-        for prop_name in preferences_prop_names:
-            if prop_name in props:
-                prop_data = props.get(prop_name, {})
-                rich_text = prop_data.get("rich_text", [])
-                preferences_text = "".join([t.get("plain_text", "") for t in rich_text]) if rich_text else ""
-                if preferences_text.strip():
-                    logging.info(f"🧳 Found preferences in '{prop_name}': '{preferences_text[:100]}...'")
-                    break
-        
-        # Try multiple possible property names for travel dates
-        dates_prop_names = ["Travel Dates", "Dates", "Date", "Trip Dates"]
-        start_date = "2024-09-01"
-        end_date = "2025-05-31"
-        
-        for prop_name in dates_prop_names:
-            if prop_name in props:
-                dates_prop = props.get(prop_name, {})
-                date_range = dates_prop.get("date", {})
-                if date_range:
-                    start_date = date_range.get("start", start_date)
-                    end_date = date_range.get("end", end_date)
-                    logging.info(f"🧳 Found dates in '{prop_name}': {start_date} to {end_date}")
-                    break
-        
-        # Default destination configuration (can be made configurable later)
-        destinations_config = [
-            {
-                "city": "dubai",
-                "start_date": "2024-09-01",
-                "end_date": "2024-12-31"
-            },
-            {
-                "city": "gurgaon", 
-                "start_date": "2025-01-01",
-                "end_date": "2025-05-31"
-            }
-        ]
-        
-        trigger_data = {
-            "page_id": page_id,
-            "destinations": destinations_config,
-            "preferences": {
-                "optimization_goals": ["weight_efficiency", "business_readiness", "climate_coverage", "cultural_compliance"],
-                "trip_type": "business_school_relocation",
-                "user_notes": preferences_text,
-                "packing_style": "minimalist_professional"
-            }
-        }
-        
-        logging.info(f"✅ Travel trigger data constructed successfully")
-        logging.info(f"   Destinations: {len(destinations_config)} cities")
-        logging.info(f"   Preferences length: {len(preferences_text)} chars")
-        logging.info(f"   Date range: {start_date} to {end_date}")
-        
-        return trigger_data
-        
-    except Exception as e:
-        logging.error(f"❌ Error extracting travel trigger data: {e}", exc_info=True)
-        return None
+    page = notion.pages.retrieve(page_id=page_id)
+    props = page.get("properties", {})
 
-def run_async_outfit_pipeline(trigger_data):
-    """Run outfit pipeline in background thread (existing logic)"""
-    # [START outfit_pipeline_monitor]
-    async def _run_pipeline_task():
-        return await run_enhanced_outfit_pipeline(trigger_data)
+    # --- Destinations ---
+    destinations = _read_destinations(props, page_id)
 
-    try:
-        logging.info("Starting async outfit pipeline...")
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
+    # --- Preferences ---
+    preferences = _read_preferences(props)
+
+    # --- Dates ---
+    date_info = _read_dates(props)
+    total_days = date_info["days"]
+
+    # distribute total days evenly across destinations if per-city durations are not provided
+    if destinations and total_days > 0:
+        base = total_days // len(destinations)
+        extra = total_days % len(destinations)
+        for i, d in enumerate(destinations):
+            d.setdefault("city", d.get("name", ""))
+            d["start_date"] = date_info["start"]
+            d["end_date"] = date_info["end"]
+            d["days"] = base + (1 if i < extra else 0)
+
+    return {
+        "page_id": page_id,
+        "destinations": destinations,
+        "preferences": preferences,
+        "dates": date_info,
+    }
+
+
+def _read_destinations(props, page_id):
+    # try a few likely property names
+    for name in ["Destinations", "Locations", "Cities"]:
+        p = props.get(name)
+        if not p:
+            continue
+        typ = p.get("type")
         try:
-            result = loop.run_until_complete(system_monitor.track_operation(
-                f"outfit_generation_{trigger_data['page_id']}",
-                _run_pipeline_task
-            ))
-            
-            if result["success"]:
-                method = result["generation_method"]
-                items = result.get("outfit_items", "N/A")
-                logging.info(f"✅ Outfit pipeline completed successfully!")
-                logging.info(f"   Method: {method}")
-                logging.info(f"   Items: {items}")
+            if typ == "multi_select":
+                return [{"city": tag["name"]} for tag in p.get("multi_select", [])]
+            if typ == "relation":
+                out = []
+                for rel in p.get("relation", []):
+                    rel_page = notion.pages.retrieve(page_id=rel["id"])
+                    title = _page_title(rel_page)
+                    if title:
+                        out.append({"city": title})
+                return out
+            if typ in ("title", "rich_text"):
+                txt = ",".join(
+                    t.get("plain_text", "") for t in p.get(typ, [])
+                )
+                names = [s.strip() for s in txt.split(",") if s.strip()]
+                return [{"city": n} for n in names]
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to parse '{name}' for page {page_id}: {e}", exc_info=True)
+            continue
+    # if nothing found, return empty list (pipeline will error out nicely)
+    return []
+
+
+def _read_preferences(props):
+    for name in ["Travel Preferences", "Trip Preferences", "Preferences"]:
+        p = props.get(name)
+        if not p:
+            continue
+        typ = p.get("type")
+        if typ == "multi_select":
+            return [tag["name"] for tag in p.get("multi_select", [])]
+        if typ == "rich_text":
+            return [
+                t.get("plain_text", "").strip()
+                for t in p.get("rich_text", [])
+                if t.get("plain_text", "").strip()
+            ]
+    return []
+
+
+def _read_dates(props):
+    for name in ["Travel Dates", "Trip Dates", "Dates"]:
+        p = props.get(name)
+        if p and p.get("type") == "date":
+            d = p.get("date") or {}
+            start = (d.get("start") or "").strip()
+            end = (d.get("end") or "").strip() or start  # if missing end, assume a single day
+            try:
+                ds = datetime.fromisoformat(start[:19])
+                de = datetime.fromisoformat(end[:19])
+            except Exception:
+                # leave as raw strings; orchestrator will still carry them
+                days = 0
             else:
-                logging.error(f"❌ Outfit pipeline failed: {result['error']}")
-                
-        finally:
-            loop.close()
-            
-    except Exception as e:
-        logging.error(f"Error in async outfit pipeline: {e}")
-    # [END outfit_pipeline_monitor]
+                days = max((de - ds).days + 1, 1)
+            return {"start": start, "end": end, "days": days}
+    return {"start": "", "end": "", "days": 0}
 
-def run_async_travel_pipeline(trigger_data):
-    """Run travel packing pipeline in background thread (enhanced with debugging)"""
-    # [START travel_pipeline_monitor]
-    async def _run_travel_task():
-        logging.info(f"🧳 Calling travel_pipeline_orchestrator.run_travel_packing_pipeline")
-        logging.info(f"🧳 Trigger data: {trigger_data}")
-        return await travel_pipeline_orchestrator.run_travel_packing_pipeline(trigger_data)
 
+def run_async_travel_pipeline(pipeline, trigger_data):
+    import asyncio
+
+    loop = asyncio.new_event_loop()
     try:
-        logging.info("🧳 Starting async travel packing pipeline...")
-        loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+        return loop.run_until_complete(pipeline.run_travel_packing_pipeline(trigger_data))
+    finally:
         try:
-            result = loop.run_until_complete(system_monitor.track_operation(
-                f"travel_packing_{trigger_data['page_id']}",
-                _run_travel_task
-            ))
-            
-            if result["success"]:
-                logging.info(f"✅ Travel packing completed successfully!")
-                logging.info(f"   Method: {result['generation_method']}")
-                logging.info(f"   Items selected: {result.get('total_items_selected', 'N/A')}")
-                logging.info(f"   Weight: {result.get('total_weight_kg', 'N/A')}kg")
-                logging.info(f"   Destinations: {result.get('destinations', [])}")
-                logging.info(f"   Duration: {result.get('trip_duration_months', 'N/A')} months")
-            else:
-                logging.error(f"❌ Travel packing failed: {result['error']}")
-                logging.error(f"   Method attempted: {result.get('generation_method', 'unknown')}")
-                
-        finally:
-            loop.close()
-            
-    except Exception as e:
-        logging.error(f"❌ Error in travel packing pipeline: {e}", exc_info=True)
-    # [END travel_pipeline_monitor]
-
+            loop.run_until_complete(asyncio.sleep(0))
+        except Exception:
+            pass
+        loop.close()
 
 @app.route('/debug/page/<page_id>', methods=['GET'])
 def debug_page_properties(page_id):

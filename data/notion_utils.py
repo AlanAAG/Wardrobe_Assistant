@@ -1,22 +1,45 @@
 import os
 import logging
-from notion_client import Client
 from dotenv import load_dotenv
 
-# Load env vars from .env file
 load_dotenv()
 
-NOTION_TOKEN = os.getenv("NOTION_TOKEN")
+# ── LAZY NOTION CLIENT ──────────────────────────────────────────────
+# We do NOT create a Notion client at import time anymore.
+# This prevents the entire app from crashing if NOTION_TOKEN is missing
+# or Notion is temporarily unreachable when modules import this file.
 
-logging.basicConfig(level=logging.INFO)
+NOTION_TOKEN_ENV_NAME = "NOTION_TOKEN"
 
-if not NOTION_TOKEN:
-    logging.error("Missing NOTION_TOKEN in environment variables. Exiting.")
-    raise EnvironmentError("NOTION_TOKEN not set.")
+try:
+    from notion_client import Client  # keep import at module scope for type hints
+except Exception:
+    Client = None  # handled at runtime
 
-# Initialize Notion client once here
-notion = Client(auth=NOTION_TOKEN)
+class _LazyNotion:
+    def __init__(self):
+        self._client = None
 
+    def _ensure(self):
+        if self._client is None:
+            token = os.getenv(NOTION_TOKEN_ENV_NAME, "").strip()
+            if not token:
+                raise EnvironmentError(
+                    f"{NOTION_TOKEN_ENV_NAME} not set. "
+                    "Travel/Outfit features that need Notion will fail until you configure it."
+                )
+            if Client is None:
+                raise RuntimeError("notion_client package is not installed.")
+            self._client = Client(auth=token)
+
+    def __getattr__(self, name):
+        # When first attribute is accessed, instantiate the real client
+        self._ensure()
+        return getattr(self._client, name)
+
+# Exported symbol used across the app:
+notion = _LazyNotion()
+# ────────────────────────────────────────────────────────────────────
 def query_database(database_id):
     """
     Query entire database, handling pagination.
