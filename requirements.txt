@@ -1,25 +1,24 @@
 # Core dependencies
-flask>=2.3.0
-python-dotenv>=1.0.0
-requests>=2.31.0
+flask>=3.1.1
+python-dotenv>=1.1.1
+requests>=2.32.4
 notion-client>=2.2.1
 supabase>=2.3.0
 
 # Production server
-gunicorn>=21.0.0
+gunicorn>=23.0.0
 
 # AI/LLM dependencies
 google-generativeai>=0.3.0
-groq>=0.4.0
+groq>=0.31.0
 
 # Async dependencies
-async
-aiohttp>=3.8.0
-async-timeout>=4.0.2
+aiohttp>=3.12.15
+async-timeout>=5.0.1
+aioredis>=2.0.1
 
 # Optional: For better JSON handling and performance
 ujson>=5.8.0
 
-structlog>=23.1.0
-aiofiles>=23.1.0
-aiohttp>=3.8.0
+structlog>=25.4.0
+aiofiles>=24.1.0
