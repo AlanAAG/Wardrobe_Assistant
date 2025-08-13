@@ -13,7 +13,9 @@ sys.path.insert(0, str(project_root))
 # We explicitly import the app object AFTER setting up the environment.
 # This is the key to solving the startup issue.
 try:
-    from api.webhook_server import app
+    from asgiref.wsgi import WsgiToAsgi
+    from api.webhook_server import app as flask_app
+    app = WsgiToAsgi(flask_app)
     
     # Configure logging for production
     logging.basicConfig(
