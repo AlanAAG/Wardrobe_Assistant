@@ -131,20 +131,20 @@ class TravelPipelineOrchestrator:
             raise ConnectionError(error_msg)
     
     async def run_travel_packing_pipeline(self, trigger_data: Dict) -> Dict:
-
-        await self.ensure_ready()
-
         """
         Main pipeline execution with comprehensive monitoring and error handling.
-        
+    
         Args:
             trigger_data: Trip configuration and user preferences
-            
+        
         Returns:
             Detailed result dictionary with success status and metrics
         """
+        # This is the fix: Ensure the orchestrator is ready before executing.
+        await self.ensure_ready()
+    
         pipeline_start = time.time()
-        
+    
         # Monitoring integration
         if MONITORING_ENABLED:
             return await system_monitor.track_operation(

@@ -161,6 +161,9 @@ async def test_travel_pipeline():
     try:
         from core.travel_pipeline_orchestrator import travel_pipeline_orchestrator
         
+        # FIX: Initialize the orchestrator before testing its internal methods
+        await travel_pipeline_orchestrator.ensure_ready()
+
         # Create mock trigger data that matches the expected format
         mock_trigger_data = {
             "page_id": os.getenv('NOTION_PACKING_GUIDE_ID'),
@@ -241,16 +244,17 @@ async def run_full_pipeline_test():
         }
         
         print("   🚀 Running complete pipeline test...")
+        # FIX: Call the async method directly on the orchestrator instance
         result = await travel_pipeline_orchestrator.run_travel_packing_pipeline(test_trigger_data)
         
-        if result.get('success'):
+        if result and result.get('success'):
             print("   ✅ Full pipeline test SUCCESSFUL!")
             print(f"      Generation method: {result.get('generation_method', 'unknown')}")
             print(f"      Items selected: {result.get('total_items_selected', 'unknown')}")
+            return True
         else:
-            print(f"   ❌ Full pipeline test failed: {result.get('error', 'Unknown error')}")
-            
-        return result.get('success', False)
+            print(f"   ❌ Full pipeline test failed: {result.get('error', 'Unknown error') if result else 'No result returned'}")
+            return False
         
     except Exception as e:
         print(f"   ❌ Full pipeline test crashed: {e}")
