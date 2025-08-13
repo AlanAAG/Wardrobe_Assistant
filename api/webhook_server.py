@@ -217,9 +217,11 @@ def handle_outfit_workflow(page_id):
             return jsonify({"error": "Failed to extract outfit trigger data"}), 400
         
         logging.info(f"Outfit trigger: aesthetic={trigger_data['aesthetics']}, prompt='{trigger_data['prompt']}'")
+
         
         future = executor.submit(run_async_outfit_pipeline, trigger_data)
-        
+
+
         return jsonify({
             "message": "Outfit generation started",
             "page_id": page_id,
