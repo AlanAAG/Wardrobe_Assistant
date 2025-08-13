@@ -120,10 +120,14 @@ class TravelPipelineOrchestrator:
             masked_value = value[:8] + "..." if len(value) > 8 else "***"
             logging.info(f"   {var}: {masked_value}")
     
-    def _test_notion_connectivity(self) -> None:
+    async def _test_notion_connectivity(self) -> None:
         """Test Notion API connectivity during initialization."""
         try:
-            test_page = notion.pages.retrieve(page_id=self.packing_guide_page_id)
+            # FIX: Run the synchronous Notion call in a separate thread
+            await asyncio.to_thread(
+                notion.pages.retrieve,
+                page_id=self.packing_guide_page_id
+            )
             logging.info("✅ Notion connectivity test successful")
         except Exception as e:
             error_msg = f"Notion connectivity test failed: {e}"
@@ -572,7 +576,7 @@ class TravelPipelineOrchestrator:
                     logging.info(f"   Gemini retry attempt {attempt + 1}/{self.api_retry_attempts}")
                 
                 return await travel_packing_agent.generate_multi_destination_packing_list(
-                    trip_config, available_items, timeout=35
+                    trip_config, available_items, timeout=90
                 )
                 
             except asyncio.TimeoutError:
@@ -596,7 +600,7 @@ class TravelPipelineOrchestrator:
                     logging.info(f"   Groq retry attempt {attempt + 1}/{self.api_retry_attempts}")
                 
                 return await travel_packing_agent.generate_packing_list_with_groq(
-                    trip_config, available_items, timeout=30
+                    trip_config, available_items, timeout=90
                 )
                 
             except asyncio.TimeoutError:

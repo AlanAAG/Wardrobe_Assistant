@@ -1,3 +1,4 @@
+from multiprocessing import context
 import os
 import json
 import logging
@@ -401,99 +402,102 @@ class TravelPackingAgent:
         
         return analysis
     
+    # In core/travel_packing_agent.py
     def _build_comprehensive_service_prompt(self, context: Dict) -> str:
         """Build the most advanced service prompt for travel packing"""
-        
+    
         trip = context["trip_overview"]
         destinations = context["destination_analysis"]
         weights = context["weight_constraints"]
         business = context["business_requirements"]
         items = context["available_items"]
-        
+    
         prompt = f"""You are the world's leading AI travel packing consultant, specializing in long-term, multi-destination business relocations. Your expertise combines weight optimization, cultural intelligence, climate adaptation, and business professionalism.
 
-**MISSION CRITICAL BRIEFING:**
-🎯 **Trip Type**: {trip["trip_type"].replace('_', ' ').title()}
-🌍 **Destinations**: {trip["destination_count"]} cities across {trip["climate_diversity"]} climate zones
-⏱️ **Duration**: {trip["total_duration_months"]} months ({trip["total_duration_days"]} days)
-🌡️ **Temperature Challenge**: {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C ({trip["temperature_range"]["span"]}°C range)
-⚖️ **Weight Budget**: {weights["total_clothes_budget_kg"]}kg TOTAL for clothes (not {weights["total_clothes_budget_kg"] + 15}kg!)
+    **MISSION CRITICAL BRIEFING:**
+    🎯 **Trip Type**: {trip["trip_type"].replace('_', ' ').title()}
+    🌍 **Destinations**: {trip["destination_count"]} cities across {trip["climate_diversity"]} climate zones
+    ⏱️ **Duration**: {trip["total_duration_months"]} months ({trip["total_duration_days"]} days)
+    🌡️ **Temperature Challenge**: {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C ({trip["temperature_range"]["span"]}°C range)
+    ⚖️ **Weight Budget**: {weights["total_clothes_budget_kg"]}kg TOTAL for clothes (not {weights["total_clothes_budget_kg"] + 15}kg!)
 
-**DESTINATION INTELLIGENCE:**"""
-        
+    **DESTINATION INTELLIGENCE:**"""
+    
         for dest in destinations:
             prompt += f"""
 
-🏙️ **{dest["city"].upper()}** ({dest["duration_months"]} months):
-   • Climate: {dest["climate_profile"].replace('_', ' ').title()}
-   • Months: {', '.join(dest["months"]).title()}
-   • Cultural Modesty: {dest["cultural_requirements"]["modesty_level"].replace('_', ' ').title()}
-   • Business Formality: {dest["cultural_requirements"]["business_formality"].replace('_', ' ').title()}
-   • Weight Strategy: {dest["weight_priorities"]}
-   • Key Challenges: {', '.join(dest["seasonal_analysis"]["challenges"])}"""
-        
+    🏙️ **{dest["city"].upper()}** ({dest["duration_months"]} months):
+    • Climate: {dest["climate_profile"].replace('_', ' ').title()}
+    • Months: {', '.join(dest["months"]).title()}
+    • Cultural Modesty: {dest["cultural_requirements"]["modesty_level"].replace('_', ' ').title()}
+    • Business Formality: {dest["cultural_requirements"]["business_formality"].replace('_', ' ').title()}
+    • Weight Strategy: {dest["weight_priorities"]}
+    • Key Challenges: {', '.join(dest["seasonal_analysis"]["challenges"])}"""
+    
         prompt += f"""
 
-**BUSINESS SCHOOL REQUIREMENTS:**
-📊 **Formal Events**: {business["formal_events_monthly"]}/month → Need {business["minimum_formal_outfits"]} complete business formal outfits
-👔 **Business Casual**: {business["business_casual_weekly"]}/week → Need {business["minimum_business_casual_outfits"]} versatile business casual combinations
-🎤 **Presentations**: {business["presentations_monthly"]}/month → Require wrinkle-free, confident appearance options
+    **BUSINESS SCHOOL REQUIREMENTS:**
+    📊 **Formal Events**: {business["formal_events_monthly"]}/month → Need {business["minimum_formal_outfits"]} complete outfits with the 'Formal' aesthetic.
+    👔 **Business Casual**: {business["business_casual_weekly"]}/week → Need {business["minimum_business_casual_outfits"]} versatile combinations. Create these by mixing items with 'Formal', 'Minimalist', and appropriate 'Casual' tags (like Polos and Chinos).
+    🎤 **Presentations**: {business["presentations_monthly"]}/month → Require wrinkle-free, confident appearance options.
+    """
+    
+        prompt += f"""
+    **WEIGHT OPTIMIZATION CONSTRAINTS:**
+    ⚖️ **Total Clothes Budget**: {weights["total_clothes_budget_kg"]}kg (THIS IS ABSOLUTE MAXIMUM)
+    📦 **Checked Bag**: {weights["checked_bag_clothes_kg"]}kg for clothes
+    🎒 **Cabin Bag**: {weights["cabin_bag_clothes_kg"]}kg for clothes  
+    🎯 **Target Efficiency**: {weights["target_efficiency"]} complete outfits per kg
+    🚫 **Heavy Item Limit**: Maximum {weights["heavy_item_limit"]} items over 1kg
 
-**WEIGHT OPTIMIZATION CONSTRAINTS:**
-⚖️ **Total Clothes Budget**: {weights["total_clothes_budget_kg"]}kg (THIS IS ABSOLUTE MAXIMUM)
-📦 **Checked Bag**: {weights["checked_bag_clothes_kg"]}kg for clothes
-🎒 **Cabin Bag**: {weights["cabin_bag_clothes_kg"]}kg for clothes  
-🎯 **Target Efficiency**: {weights["target_efficiency"]} complete outfits per kg
-🚫 **Heavy Item Limit**: Maximum {weights["heavy_item_limit"]} items over 1kg
+    **AVAILABLE WARDROBE ANALYSIS:**
+    {self._format_items_with_intelligence(items, context)}
 
-**AVAILABLE WARDROBE ANALYSIS:**
-{self._format_items_with_intelligence(items, context)}
+    **ADVANCED SELECTION STRATEGY:**
+    1. **CROSS-DESTINATION OPTIMIZATION**: Prioritize items that excel in multiple destinations
+    2. **SEASONAL BRIDGE ITEMS**: Select pieces that work across season transitions  
+    3. **OUTFIT MULTIPLICATION**: Choose items that create maximum combination possibilities
+    4. **WEIGHT EFFICIENCY**: Favor lighter items unless heavy items provide unique value
+    5. **CULTURAL COMPLIANCE**: Ensure all selections meet most conservative requirements
+    6. **BUSINESS READINESS**: Guarantee professional appearance for all occasions
+    7. **CLIMATE ADAPTATION**: Cover full {trip["temperature_range"]["span"]}°C range with layering
+    8. **LUGGAGE STRATEGY**: Allocate items strategically between checked and cabin bags
 
-**ADVANCED SELECTION STRATEGY:**
-1. **CROSS-DESTINATION OPTIMIZATION**: Prioritize items that excel in multiple destinations
-2. **SEASONAL BRIDGE ITEMS**: Select pieces that work across season transitions  
-3. **OUTFIT MULTIPLICATION**: Choose items that create maximum combination possibilities
-4. **WEIGHT EFFICIENCY**: Favor lighter items unless heavy items provide unique value
-5. **CULTURAL COMPLIANCE**: Ensure all selections meet most conservative requirements
-6. **BUSINESS READINESS**: Guarantee professional appearance for all occasions
-7. **CLIMATE ADAPTATION**: Cover full {trip["temperature_range"]["span"]}°C range with layering
-8. **LUGGAGE STRATEGY**: Allocate items strategically between checked and cabin bags
+    **CRITICAL SUCCESS FACTORS:**
+    ✅ Stay within {weights["total_clothes_budget_kg"]}kg clothes budget
+    ✅ Enable {business["minimum_formal_outfits"]}+ 'Formal' outfits
+    ✅ Enable {business["minimum_business_casual_outfits"]}+ business casual combinations  
+    ✅ Cover all climate conditions across both destinations
+    ✅ Respect cultural requirements in Dubai and Gurgaon
+    ✅ Provide strategic packing and organization guidance
 
-**CRITICAL SUCCESS FACTORS:**
-✅ Stay within {weights["total_clothes_budget_kg"]}kg clothes budget
-✅ Enable {business["minimum_formal_outfits"]}+ business formal outfits
-✅ Enable {business["minimum_business_casual_outfits"]}+ business casual combinations  
-✅ Cover all climate conditions across both destinations
-✅ Respect cultural requirements in Dubai and Gurgaon
-✅ Provide strategic packing and organization guidance
+    **OUTPUT FORMAT - DELIVER COMPREHENSIVE SOLUTION:**
 
-**OUTPUT FORMAT - DELIVER COMPREHENSIVE SOLUTION:**
+    SELECTED_ITEMS:
+    [For each selected item, provide: Name, Category, Weight, Multi-destination suitability, Business appropriateness, Climate coverage]
 
-SELECTED_ITEMS:
-[For each selected item, provide: Name, Category, Weight, Multi-destination suitability, Business appropriateness, Climate coverage]
+    WEIGHT_ANALYSIS:
+    [Calculate total weight, efficiency ratio, bag allocation]
 
-WEIGHT_ANALYSIS:
-[Calculate total weight, efficiency ratio, bag allocation]
+    OUTFIT_MATRIX:
+    [Show how selected items create complete outfits for each occasion type and destination]
 
-OUTFIT_MATRIX:
-[Show how selected items create complete outfits for each occasion type and destination]
+    BAG_ALLOCATION_STRATEGY:
+    [Specify which items go in checked vs cabin bag with reasoning]
 
-BAG_ALLOCATION_STRATEGY:
-[Specify which items go in checked vs cabin bag with reasoning]
+    PACKING_ORGANIZATION_GUIDE:
+    [Provide specific folding, rolling, and organization techniques]
 
-PACKING_ORGANIZATION_GUIDE:
-[Provide specific folding, rolling, and organization techniques]
+    DESTINATION_SPECIFIC_TIPS:
+    [Cultural, climate, and practical advice for each city]
 
-DESTINATION_SPECIFIC_TIPS:
-[Cultural, climate, and practical advice for each city]
+    CONTINGENCY_PLANNING:
+    [Backup strategies for common travel scenarios]
 
-CONTINGENCY_PLANNING:
-[Backup strategies for common travel scenarios]
-
-Remember: This is an 8-month business school relocation, not a vacation. Every gram matters, every outfit must work professionally, and cultural appropriateness is non-negotiable."""
+    Remember: This is an 8-month business school relocation, not a vacation. Every gram matters, every outfit must work professionally, and cultural appropriateness is non-negotiable."""
 
         return prompt
-    
+
     def _format_items_with_intelligence(self, available_items: Dict, context: Dict) -> str:
         """Format available items with intelligent analysis"""
         formatted = ""
