@@ -23,6 +23,24 @@ if FLASK_AVAILABLE:
 else:
     app = None
 
+# Enhanced logging configuration
+logging.basicConfig(
+    level=logging.DEBUG,  # Change to DEBUG for detailed logs
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('travel_debug.log')
+    ]
+)
+
+# Set specific loggers
+logging.getLogger('notion_client').setLevel(logging.DEBUG)
+logging.getLogger('core.travel_pipeline_orchestrator').setLevel(logging.DEBUG)
+logging.getLogger('core.travel_packing_agent').setLevel(logging.DEBUG)
+
+# Create thread pool for async operations
+executor = ThreadPoolExecutor(max_workers=5)
+
 # Startup validation and initialization
 def initialize_server():
     """Initialize server with comprehensive validation"""
@@ -58,25 +76,6 @@ def initialize_server():
     
     return True
 
-initialize_server()
-
-# Enhanced logging configuration
-logging.basicConfig(
-    level=logging.DEBUG,  # Change to DEBUG for detailed logs
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('travel_debug.log')
-    ]
-)
-
-# Set specific loggers
-logging.getLogger('notion_client').setLevel(logging.DEBUG)
-logging.getLogger('core.travel_pipeline_orchestrator').setLevel(logging.DEBUG)
-logging.getLogger('core.travel_packing_agent').setLevel(logging.DEBUG)
-
-# Create thread pool for async operations
-executor = ThreadPoolExecutor(max_workers=5)
 
 def check_environment_variables():
     """Check all required environment variables"""
@@ -773,6 +772,9 @@ if FLASK_AVAILABLE:
                 "cache": bool(_get_advanced_cache())
             }
         }), 200
+    
+    initialize_server()
+
 
 if __name__ == '__main__':
     if app:
