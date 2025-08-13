@@ -1128,7 +1128,7 @@ class TravelPipelineOrchestrator:
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Dress Shoes: {business['dress_shoes_count']}"}}]
+                    "rich_text": [{"type": "text", "text": {"content": f"Dress Shoes: {business['dress_shoes_count', 0]}"}}]
                 }
             }
         ])
