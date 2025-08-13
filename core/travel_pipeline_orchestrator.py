@@ -470,9 +470,10 @@ class TravelPipelineOrchestrator:
                 "generation_method": f"{generation_method}_finalization_failed"
             }
     
-    def _update_trip_worthy_selections(self, selected_items: List[Dict]) -> None:
+    async def _update_trip_worthy_selections(self, selected_items: List[Dict]) -> None:
         """
         Update trip-worthy checkboxes in the wardrobe database for selected items
+        Uses batch updates for efficiency
         """
         try:
             logging.info(f"🧳 Updating trip-worthy selections for {len(selected_items)} items...")
@@ -483,28 +484,38 @@ class TravelPipelineOrchestrator:
             all_items = wardrobe_data_manager.get_all_wardrobe_items()
             logging.info(f"   Retrieved {len(all_items)} total items for updating")
             
+            # Batch updates for efficiency
+            batch_size = 50
             updated_count = 0
-            for item in all_items:
-                item_id = item['id']
-                should_be_selected = item_id in selected_ids
+            
+            for i in range(0, len(all_items), batch_size):
+                batch = all_items[i:i + batch_size]
+                batch_updates = []
                 
-                # Update the trip-worthy checkbox
-                try:
-                    notion.pages.update(
-                        page_id=item_id,
-                        properties={
-                            "Trip-worthy": {
-                                "checkbox": should_be_selected
+                for item in batch:
+                    item_id = item['id']
+                    should_be_selected = item_id in selected_ids
+                    
+                    try:
+                        notion.pages.update(
+                            page_id=item_id,
+                            properties={
+                                "Trip-worthy": {
+                                    "checkbox": should_be_selected
+                                }
                             }
-                        }
-                    )
-                    updated_count += 1
+                        )
+                        updated_count += 1
+                        
+                        if should_be_selected:
+                            logging.debug(f"   ✅ Marked as trip-worthy: {item.get('item', item_id)}")
                     
-                    if should_be_selected:
-                        logging.debug(f"   ✅ Marked as trip-worthy: {item.get('item', item_id)}")
-                    
-                except Exception as e:
-                    logging.warning(f"Failed to update trip-worthy for item {item_id}: {e}")
+                    except Exception as e:
+                        logging.warning(f"Failed to update trip-worthy for item {item_id}: {e}")
+                
+                # Small delay between batches to avoid rate limiting
+                if i + batch_size < len(all_items):
+                    await asyncio.sleep(0.1)
             
             logging.info(f"✅ Updated trip-worthy selections: {len(selected_ids)} selected, {updated_count} items updated")
             
@@ -527,11 +538,15 @@ class TravelPipelineOrchestrator:
             
             logging.info(f"   Generated {len(guide_blocks)} content blocks")
             
-            # Post to Notion page
-            notion.blocks.children.append(
-                block_id=page_id,
-                children=guide_blocks
-            )
+            # Post to Notion page in chunks to avoid API limits
+            chunk_size = 100
+            for i in range(0, len(guide_blocks), chunk_size):
+                chunk = guide_blocks[i:i + chunk_size]
+                notion.blocks.children.append(
+                    block_id=page_id,
+                    children=chunk
+                )
+                logging.debug(f"   Posted chunk {i//chunk_size + 1}/{(len(guide_blocks)-1)//chunk_size + 1}")
             
             logging.info(f"✅ Posted comprehensive packing guide with {len(guide_blocks)} sections")
             
@@ -548,6 +563,135 @@ class TravelPipelineOrchestrator:
         
         # Title and Overview
         blocks.extend([
+            {
+                "object": "block",
+                "type": "heading_1",
+                "heading_1": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Total Outfit Combinations: {packing_result['outfit_analysis']['total_outfit_combinations']}"}}]
+                }
+            }
+        ])
+        
+        return blocks
+    
+    def _create_selected_items_blocks(self, packing_result: Dict) -> List[Dict]:
+        """Create selected items section organized by category"""
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "👕 Selected Items by Category"}}]
+                }
+            }
+        ]
+        
+        # Group items by category
+        items_by_category = {}
+        for item in packing_result["selected_items"]:
+            category = item['category']
+            if category not in items_by_category:
+                items_by_category[category] = []
+            items_by_category[category].append(item)
+        
+        # Add category sections
+        for category, items in items_by_category.items():
+            blocks.append({
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": f"{category} ({len(items)} items)"}}]
+                }
+            })
+            
+            for item in items:
+                aesthetics = ', '.join(item.get('aesthetic', []))
+                weather = ', '.join(item.get('weather', []))
+                blocks.append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": f"{item['item']} - {aesthetics} - {weather}"}}]
+                    }
+                })
+        
+        return blocks
+    
+    def _create_bag_allocation_blocks(self, packing_result: Dict) -> List[Dict]:
+        """Create bag allocation section"""
+        allocation = packing_result["bag_allocation"]
+        
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "🎒 Bag Allocation Strategy"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Checked Bag ({allocation['checked_bag']['weight_kg']}kg)"}}]
+                }
+            }
+        ]
+        
+        for item in allocation['checked_bag']['items']:
+            blocks.append({
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"{item['item']} ({item['category']})"}}]
+                }
+            })
+        
+        blocks.append({
+            "object": "block",
+            "type": "heading_3",
+            "heading_3": {
+                "rich_text": [{"type": "text", "text": {"content": f"Cabin Bag ({allocation['cabin_bag']['weight_kg']}kg)"}}]
+            }
+        })
+        
+        for item in allocation['cabin_bag']['items']:
+            blocks.append({
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"{item['item']} ({item['category']})"}}]
+                }
+            })
+        
+        return blocks
+    
+    def _create_outfit_analysis_blocks(self, packing_result: Dict) -> List[Dict]:
+        """Create outfit analysis section"""
+        analysis = packing_result["outfit_analysis"]
+        
+        return [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "👔 Outfit Analysis"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Business Formal Outfits: {analysis['business_formal_outfits']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Business Casual Outfits: {analysis['business_casual_outfits']}"}}]
+                }
+            },
             {
                 "object": "block",
                 "type": "bulleted_list_item",
@@ -976,48 +1120,36 @@ def run_travel_packing_pipeline(trigger_data):
     if not travel_pipeline_orchestrator:
         raise RuntimeError("Travel pipeline orchestrator not initialized")
     return asyncio.run(travel_pipeline_orchestrator.run_travel_packing_pipeline(trigger_data))
-                "type": "heading_1",
-                "heading_1": {
-                    "rich_text": [{"type": "text", "text": {"content": "🧳 AI-Generated Travel Packing Guide"}}]
-                }
-            },
-            {
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                    "rich_text": [
-                        {"type": "text", "text": {"content": f"Generated using {generation_method.upper()} AI • "}},
-                        {"type": "text", "text": {"content": f"{datetime.now().strftime('%B %d, %Y')}"}}
-                    ]
-                }
-            }
-        ])
-        
-        # Trip Overview
-        blocks.extend(self._create_trip_overview_blocks(trip_config))
-        
-        # Packing Summary
-        blocks.extend(self._create_packing_summary_blocks(packing_result))
-        
-        # Selected Items by Category
-        blocks.extend(self._create_selected_items_blocks(packing_result))
-        
-        # Bag Allocation Strategy
-        blocks.extend(self._create_bag_allocation_blocks(packing_result))
-        
-        # Outfit Analysis
-        blocks.extend(self._create_outfit_analysis_blocks(packing_result))
-        
-        # Packing Organization Guide
-        blocks.extend(self._create_packing_guide_blocks_section(packing_result))
-        
-        # Destination-Specific Tips
-        blocks.extend(self._create_destination_tips_blocks(packing_result, trip_config))
-        
-        # Assessment & Recommendations
-        blocks.extend(self._create_assessment_blocks(packing_result))
-        
-        return blocks
+
+def _create_blocks(self, trip_config: Dict, packing_result: Dict) -> List[Dict]:
+    """Create blocks for the packing guide"""
+    blocks = []
+    
+    # Trip Overview
+    blocks.extend(self._create_trip_overview_blocks(trip_config))
+    
+    # Packing Summary
+    blocks.extend(self._create_packing_summary_blocks(packing_result))
+    
+    # Selected Items by Category
+    blocks.extend(self._create_selected_items_blocks(packing_result))
+    
+    # Bag Allocation Strategy
+    blocks.extend(self._create_bag_allocation_blocks(packing_result))
+    
+    # Outfit Analysis
+    blocks.extend(self._create_outfit_analysis_blocks(packing_result))
+    
+    # Packing Organization Guide
+    blocks.extend(self._create_packing_guide_blocks_section(packing_result))
+    
+    # Destination-Specific Tips
+    blocks.extend(self._create_destination_tips_blocks(packing_result, trip_config))
+    
+    # Assessment & Recommendations
+    blocks.extend(self._create_assessment_blocks(packing_result))
+    
+    return blocks
     
     def _create_trip_overview_blocks(self, trip_config: Dict) -> List[Dict]:
         """Create trip overview section"""
@@ -1234,3 +1366,429 @@ def run_travel_packing_pipeline(trigger_data):
             },
             {
                 "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Casual Outfits: {analysis['casual_outfits']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Total Combinations: {analysis['total_outfit_combinations']}"}}]
+                }
+            }
+        ]
+    
+    def _create_packing_guide_blocks_section(self, packing_result: Dict) -> List[Dict]:
+        """Create packing organization guide section"""
+        guide = packing_result["packing_guide"]
+        
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "📦 Packing Organization Guide"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": "Packing Techniques"}}]
+                }
+            }
+        ]
+        
+        for technique in guide["packing_techniques"]:
+            blocks.append({
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": technique}}]
+                }
+            })
+        
+        blocks.append({
+            "object": "block",
+            "type": "heading_3",
+            "heading_3": {
+                "rich_text": [{"type": "text", "text": {"content": "Travel Day Strategy"}}]
+            }
+        })
+        
+        wear_items = ', '.join(guide["travel_day_strategy"]["wear_during_travel"])
+        cabin_essentials = ', '.join(guide["travel_day_strategy"]["cabin_essentials"])
+        
+        blocks.extend([
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Wear during travel: {wear_items}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Cabin essentials: {cabin_essentials}"}}]
+                }
+            }
+        ])
+        
+        return blocks
+    
+    def _create_destination_tips_blocks(self, packing_result: Dict, trip_config: Dict) -> List[Dict]:
+        """Create destination-specific tips section"""
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "🗺️ Destination-Specific Tips"}}]
+                }
+            }
+        ]
+        
+        trip_tips = packing_result.get("trip_tips", {})
+        
+        for destination in trip_config["destinations"]:
+            city = destination["city"]
+            blocks.append({
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": f"{city.title()}"}}]
+                }
+            })
+            
+            if city in trip_tips:
+                city_tips = trip_tips[city]
+                
+                # Cultural tips
+                if "cultural_tips" in city_tips:
+                    for tip in city_tips["cultural_tips"]:
+                        blocks.append({
+                            "object": "block",
+                            "type": "bulleted_list_item",
+                            "bulleted_list_item": {
+                                "rich_text": [{"type": "text", "text": {"content": f"Cultural: {tip}"}}]
+                            }
+                        })
+                
+                # Climate preparation
+                if "climate_preparation" in city_tips:
+                    for tip in city_tips["climate_preparation"]:
+                        blocks.append({
+                            "object": "block",
+                            "type": "bulleted_list_item",
+                            "bulleted_list_item": {
+                                "rich_text": [{"type": "text", "text": {"content": f"Climate: {tip}"}}]
+                            }
+                        })
+                
+                # Practical advice
+                if "practical_advice" in city_tips:
+                    for tip in city_tips["practical_advice"]:
+                        blocks.append({
+                            "object": "block",
+                            "type": "bulleted_list_item",
+                            "bulleted_list_item": {
+                                "rich_text": [{"type": "text", "text": {"content": f"Practical: {tip}"}}]
+                            }
+                        })
+        
+        return blocks
+    
+    def _create_assessment_blocks(self, packing_result: Dict) -> List[Dict]:
+        """Create assessment and recommendations section"""
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "✅ Assessment & Recommendations"}}]
+                }
+            }
+        ]
+        
+        # Business readiness assessment
+        business = packing_result["business_readiness"]
+        status = "✅ Excellent" if business["meets_requirements"] else "⚠️ Needs Improvement"
+        
+        blocks.extend([
+            {
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": "Business Readiness"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Status: {status}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Suits: {business['suits_count']} (minimum 2 recommended)"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Dress shoes: {business['dress_shoes_count']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Business shirts: {business['business_shirts_count']}"}}]
+                }
+            }
+        ])
+        
+        # Climate coverage assessment
+        climate = packing_result["climate_coverage"]
+        blocks.extend([
+            {
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": "Climate Coverage"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Temperature range: {climate['temperature_range_covered']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Hot weather items: {climate['hot_weather_coverage']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Cold weather items: {climate['cold_weather_coverage']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Versatile items: {climate['versatile_items']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Coverage adequacy: {climate['coverage_adequacy'].replace('_', ' ').title()}"}}]
+                }
+            }
+        ])
+        
+        # Cultural compliance assessment
+        cultural = packing_result["cultural_compliance"]
+        cultural_status = "✅ Dubai Ready" if cultural["dubai_ready"] else "⚠️ Review Needed"
+        
+        blocks.extend([
+            {
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": "Cultural Compliance"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Status: {cultural_status}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Compliance score: {cultural['compliance_score']}"}}]
+                }
+            },
+            {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Modest items: {cultural['modest_items_count']}/{cultural['total_items']}"}}]
+                }
+            }
+        ])
+        
+        # Add cultural recommendations
+        for recommendation in cultural.get("recommendations", []):
+            blocks.append({
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Tip: {recommendation}"}}]
+                }
+            })
+        
+        return blocks
+    
+    def _clear_travel_trigger_fields(self, page_id: str) -> None:
+        """
+        Clear travel trigger fields to reset for next use.
+        Safely handles case where trigger fields don't exist.
+        """
+        try:
+            logging.info(f"🧳 Clearing travel trigger fields for page {page_id}")
+            
+            # Check if page has trigger properties by retrieving it first
+            page = notion.pages.retrieve(page_id=page_id)
+            properties = page.get("properties", {})
+            
+            # Only clear fields that exist
+            update_properties = {}
+            
+            # Check for various possible trigger field names
+            trigger_field_names = ["Generate", "Generate Travel Packing", "Generate Packing", "Travel Generate"]
+            for field_name in trigger_field_names:
+                if field_name in properties:
+                    update_properties[field_name] = {"checkbox": False}
+                    logging.info(f"   Will clear trigger field: {field_name}")
+            
+            if "Destinations" in properties:
+                update_properties["Destinations"] = {"multi_select": []}
+                logging.info(f"   Will clear: Destinations")
+            
+            if "Travel Preferences" in properties:
+                update_properties["Travel Preferences"] = {"rich_text": []}
+                logging.info(f"   Will clear: Travel Preferences")
+            
+            if "Preferences" in properties:
+                update_properties["Preferences"] = {"rich_text": []}
+                logging.info(f"   Will clear: Preferences")
+            
+            # Only update if there are properties to update
+            if update_properties:
+                notion.pages.update(page_id=page_id, properties=update_properties)
+                logging.info(f"✅ Cleared {len(update_properties)} travel trigger fields for page {page_id}")
+            else:
+                logging.info(f"ℹ️  No travel trigger fields found on page {page_id}")
+                
+        except Exception as e:
+            # Don't fail the entire pipeline if trigger clearing fails
+            logging.warning(f"⚠️  Could not clear travel trigger fields for page {page_id}: {e}")
+    
+    async def _get_data_source_info(self) -> Dict:
+        """Async get information about which data sources are available/used"""
+        try:
+            return await asyncio.to_thread(wardrobe_data_manager.get_data_stats)
+        except Exception:
+            return {"error": "Could not retrieve data source stats"}
+
+# Create global instance
+try:
+    travel_pipeline_orchestrator = TravelPipelineOrchestrator()
+    logging.info("✅ Global travel_pipeline_orchestrator created successfully")
+except Exception as e:
+    logging.error(f"❌ Failed to create global travel_pipeline_orchestrator: {e}")
+    travel_pipeline_orchestrator = None
+
+# Async test function for development
+async def test_travel_packing_pipeline(destinations: List[Dict] = None, preferences: Dict = None):
+    """
+    Async test function to verify travel packing pipeline
+    
+    Args:
+        destinations: List of destination dictionaries with city, start_date, end_date
+        preferences: User preferences dictionary
+    """
+    # Default test configuration
+    if not destinations:
+        destinations = [
+            {
+                "city": "dubai",
+                "start_date": "2024-09-01",
+                "end_date": "2024-12-31"
+            },
+            {
+                "city": "gurgaon",
+                "start_date": "2025-01-01", 
+                "end_date": "2025-05-31"
+            }
+        ]
+    
+    if not preferences:
+        preferences = {
+            "optimization_goals": ["weight_efficiency", "business_readiness", "climate_coverage"],
+            "packing_style": "minimalist_professional",
+            "trip_type": "business_school_relocation"
+        }
+    
+    trigger_data = {
+        "page_id": travel_pipeline_orchestrator.packing_guide_page_id if travel_pipeline_orchestrator else "test_page_id",
+        "destinations": destinations,
+        "preferences": preferences
+    }
+    
+    logging.info(f"🧳 Testing travel packing pipeline...")
+    logging.info(f"   Destinations: {[d['city'] for d in destinations]}")
+    logging.info(f"   Duration: {len(destinations)} destinations")
+    
+    try:
+        if not travel_pipeline_orchestrator:
+            print("❌ Travel pipeline orchestrator not initialized!")
+            return
+            
+        result = await travel_pipeline_orchestrator.run_travel_packing_pipeline(trigger_data)
+        
+        if result["success"]:
+            print(f"✅ Travel packing pipeline test successful!")
+            print(f"   Method: {result['generation_method']}")
+            print(f"   Items selected: {result['total_items_selected']}")
+            print(f"   Total weight: {result['total_weight_kg']}kg")
+            print(f"   Weight efficiency: {result['weight_efficiency']} outfits/kg")
+            print(f"   Business readiness: {result['business_readiness']}")
+            print(f"   Destinations: {result['destinations']}")
+            print(f"   Trip duration: {result['trip_duration_months']} months")
+            print(f"   Outfit possibilities: {result['outfit_possibilities']}")
+        else:
+            print(f"❌ Travel packing pipeline test failed: {result['error']}")
+            print(f"   Generation method: {result['generation_method']}")
+            
+    except Exception as e:
+        print(f"💥 Test error: {e}")
+        logging.error(f"❌ Test error: {e}", exc_info=True)
+
+# Convenience function to run async test from sync context
+def run_test_travel_packing_pipeline(destinations: List[Dict] = None, preferences: Dict = None):
+    """Sync wrapper to run async test"""
+    return asyncio.run(test_travel_packing_pipeline(destinations, preferences))
+
+# Legacy compatibility wrapper
+def run_travel_packing_pipeline(trigger_data):
+    """
+    Legacy wrapper for backward compatibility - runs async pipeline in sync context
+    
+    DEPRECATED: Use run_travel_packing_pipeline() directly with asyncio.run() or await
+    """
+    logging.warning("Using legacy run_travel_packing_pipeline wrapper - consider updating to async")
+    if not travel_pipeline_orchestrator:
+        raise RuntimeError("Travel pipeline orchestrator not initialized")
+    return asyncio.run(travel_pipeline_orchestrator.run_travel_packing_pipeline(trigger_data))
