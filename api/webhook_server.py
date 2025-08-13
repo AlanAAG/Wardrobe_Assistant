@@ -23,6 +23,43 @@ if FLASK_AVAILABLE:
 else:
     app = None
 
+# Startup validation and initialization
+def initialize_server():
+    """Initialize server with comprehensive validation"""
+    logging.info("🚀 Starting AI Wardrobe Assistant...")
+    
+    if not FLASK_AVAILABLE:
+        logging.error("❌ Flask not available. Server cannot start.")
+        return False
+    
+    if not check_environment_variables():
+        logging.error("❌ Environment check failed. Exiting.")
+        return False
+    
+    # Test core imports
+    try:
+        core_functions = _get_core_functions()
+        travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
+        outfit_pipeline = core_functions.get('run_enhanced_outfit_pipeline')
+        
+        if travel_orchestrator:
+            logging.info("✅ Travel pipeline orchestrator loaded successfully")
+        else:
+            logging.warning("⚠️  Travel pipeline orchestrator not available")
+        
+        if outfit_pipeline:
+            logging.info("✅ Outfit pipeline loaded successfully")
+        else:
+            logging.warning("⚠️  Outfit pipeline not available")
+            
+    except Exception as e:
+        logging.error(f"❌ Failed to load core components: {e}")
+        return False
+    
+    return True
+
+initialize_server()
+
 # Enhanced logging configuration
 logging.basicConfig(
     level=logging.DEBUG,  # Change to DEBUG for detailed logs
@@ -737,53 +774,11 @@ if FLASK_AVAILABLE:
             }
         }), 200
 
-
-# Startup validation and initialization
-def initialize_server():
-    """Initialize server with comprehensive validation"""
-    logging.info("🚀 Starting AI Wardrobe Assistant...")
-    
-    if not FLASK_AVAILABLE:
-        logging.error("❌ Flask not available. Server cannot start.")
-        return False
-    
-    if not check_environment_variables():
-        logging.error("❌ Environment check failed. Exiting.")
-        return False
-    
-    # Test core imports
-    try:
-        core_functions = _get_core_functions()
-        travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
-        outfit_pipeline = core_functions.get('run_enhanced_outfit_pipeline')
-        
-        if travel_orchestrator:
-            logging.info("✅ Travel pipeline orchestrator loaded successfully")
-        else:
-            logging.warning("⚠️  Travel pipeline orchestrator not available")
-        
-        if outfit_pipeline:
-            logging.info("✅ Outfit pipeline loaded successfully")
-        else:
-            logging.warning("⚠️  Outfit pipeline not available")
-            
-    except Exception as e:
-        logging.error(f"❌ Failed to load core components: {e}")
-        return False
-    
-    return True
-
-
 if __name__ == '__main__':
-    if initialize_server():
+    if app:
         port = int(os.environ.get('PORT', 5000))
-        logging.info(f"🌐 Starting server on port {port}")
-        
-        if app:
-            app.run(host='0.0.0.0', port=port, debug=True)
-        else:
-            logging.error("❌ Flask app not initialized. Cannot start server.")
-            sys.exit(1)
+        logging.info(f"🌐 Starting server for LOCAL DEVELOPMENT on port {port}")
+        app.run(host='0.0.0.0', port=port, debug=True)
     else:
-        logging.error("❌ Server initialization failed. Exiting.")
+        logging.critical("Flask application could not be created. Exiting.")
         sys.exit(1)
