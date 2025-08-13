@@ -5,15 +5,15 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
-from logic.travel_packing_agent import travel_packing_agent
-from logic.data_manager import wardrobe_data_manager
-from logic.notion_utils import (
+from core.travel_packing_agent import travel_packing_agent
+from data.data_manager import wardrobe_data_manager
+from data.notion_utils import (
     notion,
     clear_page_content,
     clear_trigger_fields,
     retrieve_page_blocks
 )
-from logic.travel_config import DESTINATIONS_CONFIG, WEIGHT_CONSTRAINTS
+from config.travel_config import DESTINATIONS_CONFIG, WEIGHT_CONSTRAINTS
 
 load_dotenv()
 

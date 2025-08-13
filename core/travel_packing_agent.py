@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import google.generativeai as genai
 from groq import Groq
-from logic.travel_config import (
+from config.travel_config import (
     AVERAGE_WEIGHTS, 
     DESTINATIONS_CONFIG, 
     WEIGHT_CONSTRAINTS,

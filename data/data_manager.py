@@ -2,8 +2,8 @@ import json
 import os
 import logging
 from typing import List, Dict, Optional
-from logic.supabase_client import supabase_client
-from logic.notion_utils import get_wardrobe_items
+from data.supabase_client import supabase_client
+from data.notion_utils import get_wardrobe_items
 
 class WardrobeDataManager:
     """

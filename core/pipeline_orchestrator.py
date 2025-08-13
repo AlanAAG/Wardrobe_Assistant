@@ -3,15 +3,15 @@ import os
 import logging
 import asyncio
 from dotenv import load_dotenv
-from logic.weather_utils import get_weather_forecast
-from logic.outfit_logic import build_outfit
-from logic.llm_agents import outfit_llm_agents
-from logic.notion_utils import (
+from data.weather_utils import get_weather_forecast
+from core.outfit_logic import build_outfit
+from core.llm_agents import outfit_llm_agents
+from data.notion_utils import (
     post_outfit_to_notion_page,
     clear_page_content,
     clear_trigger_fields,
 )
-from logic.data_manager import wardrobe_data_manager
+from data.data_manager import wardrobe_data_manager
 
 load_dotenv()
 

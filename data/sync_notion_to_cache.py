@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from dotenv import load_dotenv
-from logic.notion_utils import get_wardrobe_items, get_outfit_db_pages
+from data.notion_utils import get_wardrobe_items, get_outfit_db_pages
 
 load_dotenv()
 

@@ -7,8 +7,8 @@ Can be run manually or scheduled as a cron job.
 import logging
 import sys
 from dotenv import load_dotenv
-from logic.data_manager import wardrobe_data_manager
-from logic.supabase_client import supabase_client
+from data.data_manager import wardrobe_data_manager
+from data.supabase_client import supabase_client
 
 # Configure logging
 logging.basicConfig(
