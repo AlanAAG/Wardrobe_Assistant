@@ -47,18 +47,8 @@ def get_wardrobe_data_manager():
             _wardrobe_data_manager = None
     return _wardrobe_data_manager
 
-# Legacy compatibility - maintain old interface but with lazy loading
-@property
-def notion():
-    return get_notion()
-
-@property  
-def supabase_client():
-    return get_supabase_client()
-
-@property
-def wardrobe_data_manager():
-    return get_wardrobe_data_manager()
+# REMOVED: Broken @property decorators that cause circular imports
+# These were trying to create properties on module level which doesn't work properly
 
 # Export the getter functions
 __all__ = [

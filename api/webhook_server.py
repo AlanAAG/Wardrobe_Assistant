@@ -1,4 +1,3 @@
-from flask import Flask, request, jsonify
 import logging
 import os
 import asyncio
@@ -7,18 +6,22 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from dotenv import load_dotenv
-from data.notion_utils import notion
-from core.pipeline_orchestrator import run_enhanced_outfit_pipeline
-from core.travel_pipeline_orchestrator import travel_pipeline_orchestrator
 
-# [START monitoring_imports]
-from monitoring.system_monitor import system_monitor
-from caching.advanced_cache import advanced_cache
-# [END monitoring_imports]
+# Only import Flask if available
+try:
+    from flask import Flask, request, jsonify
+    FLASK_AVAILABLE = True
+except ImportError:
+    FLASK_AVAILABLE = False
+    logging.error("Flask not available - install with: pip install flask")
 
 load_dotenv()
 
-app = Flask(__name__)
+# Create Flask app only if Flask is available
+if FLASK_AVAILABLE:
+    app = Flask(__name__)
+else:
+    app = None
 
 # Enhanced logging configuration
 logging.basicConfig(
@@ -61,6 +64,53 @@ def check_environment_variables():
     
     return True
 
+def _get_notion_client():
+    """Lazy load Notion client to avoid circular imports."""
+    try:
+        from data.notion_utils import notion
+        return notion
+    except ImportError as e:
+        logging.error(f"Failed to import Notion client: {e}")
+        return None
+
+def _get_core_functions():
+    """Lazy load core functions to avoid circular imports."""
+    functions = {}
+    
+    try:
+        from core.pipeline_orchestrator import run_enhanced_outfit_pipeline
+        functions['run_enhanced_outfit_pipeline'] = run_enhanced_outfit_pipeline
+    except ImportError as e:
+        logging.error(f"Pipeline orchestrator import failed: {e}")
+        functions['run_enhanced_outfit_pipeline'] = None
+    
+    try:
+        from core.travel_pipeline_orchestrator import travel_pipeline_orchestrator
+        functions['travel_pipeline_orchestrator'] = travel_pipeline_orchestrator
+    except ImportError as e:
+        logging.error(f"Travel pipeline orchestrator import failed: {e}")
+        functions['travel_pipeline_orchestrator'] = None
+    
+    return functions
+
+def _get_monitoring():
+    """Lazy load monitoring components to avoid circular imports."""
+    try:
+        from monitoring.system_monitor import system_monitor
+        return system_monitor
+    except ImportError as e:
+        logging.warning(f"System monitor not available: {e}")
+        return None
+
+def _get_advanced_cache():
+    """Lazy load advanced cache to avoid circular imports."""
+    try:
+        from caching.advanced_cache import advanced_cache
+        return advanced_cache
+    except ImportError as e:
+        logging.warning(f"Advanced cache not available: {e}")
+        return None
+
 def _page_title(page):
     """Extract the plain text title from a Notion page object."""
     props = page.get("properties", {})
@@ -71,14 +121,14 @@ def _page_title(page):
                 return "".join(t.get("plain_text", "") for t in title_data).strip()
     return None
 
-@app.route('/webhook/notion', methods=['POST'])
-def handle_unified_notion_webhook():
-    """
-    UNIFIED webhook handler for both outfit generation and travel packing.
-    Routes to appropriate pipeline based on page properties.
-    """
-    # [START webhook_monitor]
-    async def _handle_webhook_async():
+# Only define routes if Flask is available
+if FLASK_AVAILABLE:
+    @app.route('/webhook/notion', methods=['POST'])
+    def handle_unified_notion_webhook():
+        """
+        UNIFIED webhook handler for both outfit generation and travel packing.
+        Routes to appropriate pipeline based on page properties.
+        """
         webhook_data = request.get_json()
         
         if not webhook_data:
@@ -116,18 +166,6 @@ def handle_unified_notion_webhook():
         else:
             logging.info(f"No workflow triggered for page {page_id}")
             return jsonify({"message": "No workflow conditions met"}), 200
-    
-    try:
-        return asyncio.run(system_monitor.track_operation(
-            "notion_webhook_handler",
-            _handle_webhook_async
-        ))
-    except Exception as e:
-        # The monitor.track_operation will handle logging the error
-        logging.error(f"❌ Webhook handler crashed: {e}", exc_info=True)
-        return jsonify({"error": "Internal server error"}), 500
-    # [END webhook_monitor]
-
 
 def determine_workflow_type(page_id):
     """
@@ -145,6 +183,11 @@ def determine_workflow_type(page_id):
       - 'Desired Aesthetic' not empty
       - 'Prompt' rich_text not empty
     """
+    notion = _get_notion_client()
+    if not notion:
+        logging.error("Notion client not available for workflow detection")
+        return None
+    
     try:
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
@@ -228,9 +271,14 @@ def handle_outfit_workflow(page_id):
         
         logging.info(f"Outfit trigger: aesthetic={trigger_data['aesthetics']}, prompt='{trigger_data['prompt']}'")
 
+        # Get the pipeline function
+        core_functions = _get_core_functions()
+        run_pipeline = core_functions.get('run_enhanced_outfit_pipeline')
         
-        future = executor.submit(run_enhanced_outfit_pipeline, trigger_data)
-
+        if not run_pipeline:
+            return jsonify({"error": "Outfit pipeline not available"}), 500
+        
+        future = executor.submit(run_async_outfit_pipeline, run_pipeline, trigger_data)
 
         return jsonify({
             "message": "Outfit generation started",
@@ -260,17 +308,24 @@ def handle_travel_workflow(page_id):
         
         logging.info(f"✅ Travel trigger data extracted: {travel_trigger_data}")
         
+        # Get the travel orchestrator
+        core_functions = _get_core_functions()
+        travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
+        
+        if not travel_orchestrator:
+            return jsonify({"error": "Travel pipeline not available"}), 500
+        
         # Test orchestrator access
         try:
             logging.info(f"🧳 Testing travel_pipeline_orchestrator access...")
-            test_result = hasattr(travel_pipeline_orchestrator, 'run_travel_packing_pipeline')
+            test_result = hasattr(travel_orchestrator, 'run_travel_packing_pipeline')
             logging.info(f"🧳 Orchestrator has run_travel_packing_pipeline method: {test_result}")
         except Exception as e:
             logging.error(f"❌ Orchestrator access test failed: {e}")
             return jsonify({"error": f"Orchestrator access failed: {str(e)}"}), 500
         
         logging.info(f"🧳 Starting async travel pipeline...")
-        future = executor.submit(run_async_travel_pipeline, travel_trigger_data)
+        future = executor.submit(run_async_travel_pipeline, travel_orchestrator, travel_trigger_data)
         
         return jsonify({
             "message": "Travel packing started", 
@@ -278,7 +333,7 @@ def handle_travel_workflow(page_id):
             "workflow": "travel",
             "status": "processing",
             "trip_type": "business_school_relocation",
-            "destinations": ["Dubai (Sep-Dec)", "Gurgaon (Jan-May)"],
+            "destinations": [d.get("city", "Unknown") for d in travel_trigger_data.get("destinations", [])],
             "debug_info": {
                 "trigger_data_extracted": True,
                 "orchestrator_accessible": True,
@@ -296,6 +351,10 @@ def handle_travel_workflow(page_id):
 
 def validate_outfit_trigger_conditions(page_id):
     """Validate outfit generation trigger conditions (existing logic)"""
+    notion = _get_notion_client()
+    if not notion:
+        return False
+        
     try:
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
@@ -317,6 +376,10 @@ def validate_outfit_trigger_conditions(page_id):
 
 def get_outfit_trigger_data(page_id):
     """Extract outfit trigger data (existing logic)"""
+    notion = _get_notion_client()
+    if not notion:
+        return None
+        
     try:
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
@@ -346,38 +409,52 @@ def get_travel_trigger_data(page_id):
       - Travel Preferences (multi_select or rich_text)
       - Travel Dates (date range)
     """
-    page = notion.pages.retrieve(page_id=page_id)
-    props = page.get("properties", {})
+    notion = _get_notion_client()
+    if not notion:
+        return None
+        
+    try:
+        page = notion.pages.retrieve(page_id=page_id)
+        props = page.get("properties", {})
 
-    # --- Destinations ---
-    destinations = _read_destinations(props, page_id)
+        # --- Destinations ---
+        destinations = _read_destinations(props, page_id)
 
-    # --- Preferences ---
-    preferences = _read_preferences(props)
+        # --- Preferences ---
+        preferences = _read_preferences(props)
 
-    # --- Dates ---
-    date_info = _read_dates(props)
-    total_days = date_info["days"]
+        # --- Dates ---
+        date_info = _read_dates(props)
+        total_days = date_info["days"]
 
-    # distribute total days evenly across destinations if per-city durations are not provided
-    if destinations and total_days > 0:
-        base = total_days // len(destinations)
-        extra = total_days % len(destinations)
-        for i, d in enumerate(destinations):
-            d.setdefault("city", d.get("name", ""))
-            d["start_date"] = date_info["start"]
-            d["end_date"] = date_info["end"]
-            d["days"] = base + (1 if i < extra else 0)
+        # distribute total days evenly across destinations if per-city durations are not provided
+        if destinations and total_days > 0:
+            base = total_days // len(destinations)
+            extra = total_days % len(destinations)
+            for i, d in enumerate(destinations):
+                d.setdefault("city", d.get("name", ""))
+                d["start_date"] = date_info["start"]
+                d["end_date"] = date_info["end"]
+                d["days"] = base + (1 if i < extra else 0)
 
-    return {
-        "page_id": page_id,
-        "destinations": destinations,
-        "preferences": preferences,
-        "dates": date_info,
-    }
+        return {
+            "page_id": page_id,
+            "destinations": destinations,
+            "preferences": preferences,
+            "dates": date_info,
+        }
+    
+    except Exception as e:
+        logging.error(f"Error extracting travel trigger data: {e}")
+        return None
 
 
 def _read_destinations(props, page_id):
+    """Read destinations from various property types"""
+    notion = _get_notion_client()
+    if not notion:
+        return []
+        
     # try a few likely property names
     for name in ["Destinations", "Locations", "Cities"]:
         p = props.get(name)
@@ -390,10 +467,14 @@ def _read_destinations(props, page_id):
             if typ == "relation":
                 out = []
                 for rel in p.get("relation", []):
-                    rel_page = notion.pages.retrieve(page_id=rel["id"])
-                    title = _page_title(rel_page)
-                    if title:
-                        out.append({"city": title})
+                    try:
+                        rel_page = notion.pages.retrieve(page_id=rel["id"])
+                        title = _page_title(rel_page)
+                        if title:
+                            out.append({"city": title})
+                    except Exception as e:
+                        logging.warning(f"Failed to retrieve relation page {rel['id']}: {e}")
+                        continue
                 return out
             if typ in ("title", "rich_text"):
                 txt = ",".join(
@@ -409,6 +490,7 @@ def _read_destinations(props, page_id):
 
 
 def _read_preferences(props):
+    """Read travel preferences from various property types"""
     for name in ["Travel Preferences", "Trip Preferences", "Preferences"]:
         p = props.get(name)
         if not p:
@@ -426,6 +508,7 @@ def _read_preferences(props):
 
 
 def _read_dates(props):
+    """Read travel dates from date properties"""
     for name in ["Travel Dates", "Trip Dates", "Dates"]:
         p = props.get(name)
         if p and p.get("type") == "date":
@@ -433,170 +516,274 @@ def _read_dates(props):
             start = (d.get("start") or "").strip()
             end = (d.get("end") or "").strip() or start  # if missing end, assume a single day
             try:
+                from datetime import datetime
                 ds = datetime.fromisoformat(start[:19])
                 de = datetime.fromisoformat(end[:19])
+                days = max((de - ds).days + 1, 1)
             except Exception:
                 # leave as raw strings; orchestrator will still carry them
                 days = 0
-            else:
-                days = max((de - ds).days + 1, 1)
             return {"start": start, "end": end, "days": days}
     return {"start": "", "end": "", "days": 0}
 
 
-def run_async_travel_pipeline(pipeline, trigger_data):
-    import asyncio
-
-    loop = asyncio.new_event_loop()
+def run_async_outfit_pipeline(pipeline_func, trigger_data):
+    """Run outfit pipeline in async context"""
     try:
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(pipeline.run_travel_packing_pipeline(trigger_data))
-    finally:
+        import asyncio
+        
+        # Check if we're in an async context already
         try:
-            loop.run_until_complete(asyncio.sleep(0))
-        except Exception:
-            pass
-        loop.close()
-
-@app.route('/debug/page/<page_id>', methods=['GET'])
-def debug_page_properties(page_id):
-    """Debug endpoint to inspect page properties for routing"""
-    try:
-        page = notion.pages.retrieve(page_id=page_id)
-        props = page.get("properties", {})
-        
-        property_analysis = {}
-        for prop_name, prop_data in props.items():
-            prop_type = prop_data.get("type")
-            if prop_type == "checkbox":
-                property_analysis[prop_name] = {
-                    "type": "checkbox",
-                    "value": prop_data.get("checkbox", False)
-                }
-            elif prop_type == "multi_select":
-                property_analysis[prop_name] = {
-                    "type": "multi_select",
-                    "values": [tag.get("name") for tag in prop_data.get("multi_select", [])]
-                }
-            elif prop_type == "rich_text":
-                property_analysis[prop_name] = {
-                    "type": "rich_text",
-                    "text": "".join([t.get("plain_text", "") for t in prop_data.get("rich_text", [])])
-                }
-            elif prop_type == "date":
-                property_analysis[prop_name] = {
-                    "type": "date",
-                    "date_range": prop_data.get("date", {})
-                }
-        
-        workflow = determine_workflow_type(page_id)
-        
-        return jsonify({
-            "page_id": page_id,
-            "properties": property_analysis,
-            "detected_workflow": workflow,
-            "page_title": page.get("properties", {}).get("title", {})
-        }), 200
-        
+            loop = asyncio.get_running_loop()
+            # We're in an async context, create a new thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, pipeline_func(trigger_data))
+                return future.result()
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run
+            return asyncio.run(pipeline_func(trigger_data))
+    
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logging.error(f"Error in async outfit pipeline: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
-@app.route('/debug/travel/test/<page_id>', methods=['GET'])
-def debug_travel_workflow(page_id):
-    """Debug endpoint to test travel workflow detection"""
+
+def run_async_travel_pipeline(travel_orchestrator, trigger_data):
+    """Run travel pipeline in async context"""
     try:
-        logging.info(f"🔍 DEBUG: Testing travel workflow for page {page_id}")
+        import asyncio
         
-        # Test workflow detection
-        workflow_type = determine_workflow_type(page_id)
-        logging.info(f"🔍 DEBUG: Detected workflow: {workflow_type}")
-        
-        if workflow_type == "travel":
-            # Test travel trigger data extraction
-            travel_data = get_travel_trigger_data(page_id)
-            logging.info(f"🔍 DEBUG: Travel trigger data: {travel_data}")
-            
-            # Test orchestrator initialization
-            try:
-                orchestrator_status = hasattr(travel_pipeline_orchestrator, 'run_travel_packing_pipeline')
-                logging.info("✅ Travel orchestrator access successful")
+        # Check if we're in an async context already
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, create a new thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run, 
+                    travel_orchestrator.run_travel_packing_pipeline(trigger_data)
+                )
+                return future.result()
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run
+            return asyncio.run(travel_orchestrator.run_travel_packing_pipeline(trigger_data))
+    
+    except Exception as e:
+        logging.error(f"Error in async travel pipeline: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+# Only define debug routes if Flask is available
+if FLASK_AVAILABLE:
+    @app.route('/debug/page/<page_id>', methods=['GET'])
+    def debug_page_properties(page_id):
+        """Debug endpoint to inspect page properties for routing"""
+        try:
+            notion = _get_notion_client()
+            if not notion:
+                return jsonify({"error": "Notion client not available"}), 500
                 
+            page = notion.pages.retrieve(page_id=page_id)
+            props = page.get("properties", {})
+            
+            property_analysis = {}
+            for prop_name, prop_data in props.items():
+                prop_type = prop_data.get("type")
+                if prop_type == "checkbox":
+                    property_analysis[prop_name] = {
+                        "type": "checkbox",
+                        "value": prop_data.get("checkbox", False)
+                    }
+                elif prop_type == "multi_select":
+                    property_analysis[prop_name] = {
+                        "type": "multi_select",
+                        "values": [tag.get("name") for tag in prop_data.get("multi_select", [])]
+                    }
+                elif prop_type == "rich_text":
+                    property_analysis[prop_name] = {
+                        "type": "rich_text",
+                        "text": "".join([t.get("plain_text", "") for t in prop_data.get("rich_text", [])])
+                    }
+                elif prop_type == "date":
+                    property_analysis[prop_name] = {
+                        "type": "date",
+                        "date_range": prop_data.get("date", {})
+                    }
+            
+            workflow = determine_workflow_type(page_id)
+            
+            return jsonify({
+                "page_id": page_id,
+                "properties": property_analysis,
+                "detected_workflow": workflow,
+                "page_title": page.get("properties", {}).get("title", {})
+            }), 200
+            
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/debug/travel/test/<page_id>', methods=['GET'])
+    def debug_travel_workflow(page_id):
+        """Debug endpoint to test travel workflow detection"""
+        try:
+            logging.info(f"🔍 DEBUG: Testing travel workflow for page {page_id}")
+            
+            # Test workflow detection
+            workflow_type = determine_workflow_type(page_id)
+            logging.info(f"🔍 DEBUG: Detected workflow: {workflow_type}")
+            
+            if workflow_type == "travel":
+                # Test travel trigger data extraction
+                travel_data = get_travel_trigger_data(page_id)
+                logging.info(f"🔍 DEBUG: Travel trigger data: {travel_data}")
+                
+                # Test orchestrator initialization
+                try:
+                    core_functions = _get_core_functions()
+                    travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
+                    orchestrator_status = bool(travel_orchestrator and hasattr(travel_orchestrator, 'run_travel_packing_pipeline'))
+                    logging.info("✅ Travel orchestrator access successful")
+                    
+                    return jsonify({
+                        "status": "success",
+                        "workflow_detected": workflow_type,
+                        "travel_data": travel_data,
+                        "orchestrator_status": "accessible" if orchestrator_status else "not_accessible",
+                        "orchestrator_methods": [method for method in dir(travel_orchestrator) if not method.startswith('_')] if travel_orchestrator else []
+                    })
+                    
+                except Exception as e:
+                    logging.error(f"❌ Orchestrator error: {e}")
+                    return jsonify({
+                        "status": "error",
+                        "error": f"Orchestrator error: {str(e)}"
+                    }), 500
+            else:
                 return jsonify({
-                    "status": "success",
-                    "workflow_detected": workflow_type,
-                    "travel_data": travel_data,
-                    "orchestrator_status": "accessible" if orchestrator_status else "not_accessible",
-                    "orchestrator_methods": [method for method in dir(travel_pipeline_orchestrator) if not method.startswith('_')]
+                    "status": "no_travel_workflow",
+                    "workflow_detected": workflow_type
                 })
                 
-            except Exception as e:
-                logging.error(f"❌ Orchestrator error: {e}")
-                return jsonify({
-                    "status": "error",
-                    "error": f"Orchestrator error: {str(e)}"
-                }), 500
-        else:
-            return jsonify({
-                "status": "no_travel_workflow",
-                "workflow_detected": workflow_type
-            })
+        except Exception as e:
+            logging.error(f"❌ Debug endpoint error: {e}")
+            return jsonify({"status": "error", "error": str(e)}), 500
+
+    @app.route('/health', methods=['GET'])
+    def health_check():
+        """Health check endpoint for monitoring."""
+        try:
+            # Get monitoring components if available
+            system_monitor = _get_monitoring()
+            advanced_cache = _get_advanced_cache()
             
-    except Exception as e:
-        logging.error(f"❌ Debug endpoint error: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+            health_data = {
+                "status": "healthy",
+                "workflows": ["outfit", "travel"],
+                "environment_check": check_environment_variables(),
+                "components": {
+                    "flask": FLASK_AVAILABLE,
+                    "notion_client": bool(_get_notion_client()),
+                    "core_functions": bool(_get_core_functions()),
+                    "monitoring": bool(system_monitor),
+                    "cache": bool(advanced_cache)
+                }
+            }
+            
+            # Add performance data if monitoring is available
+            if system_monitor:
+                try:
+                    import asyncio
+                    performance_dashboard = asyncio.run(system_monitor.get_performance_dashboard())
+                    health_data["performance"] = performance_dashboard
+                except Exception as e:
+                    health_data["performance_error"] = str(e)
+            
+            # Add cache stats if available
+            if advanced_cache:
+                try:
+                    import asyncio
+                    cache_stats = asyncio.run(advanced_cache.get_stats())
+                    health_data["cache"] = cache_stats
+                except Exception as e:
+                    health_data["cache_error"] = str(e)
+            
+            return jsonify(health_data), 200
+            
+        except Exception as e:
+            logging.error(f"Error generating health check response: {e}")
+            return jsonify({
+                "status": "unhealthy",
+                "error": "Failed to retrieve system metrics"
+            }), 500
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint for monitoring."""
-    # [START health_check_update]
-    try:
-        # Get detailed performance data from the monitor
-        performance_dashboard = asyncio.run(system_monitor.get_performance_dashboard())
-        cache_stats = asyncio.run(advanced_cache.get_stats())
-        
+    @app.route('/', methods=['GET'])
+    def root():
+        """Root endpoint."""
         return jsonify({
-            "status": "healthy",
-            "workflows": ["outfit", "travel"],
-            "performance": performance_dashboard,
-            "cache": cache_stats,
-            "environment_check": check_environment_variables()
+            "message": "Unified AI Wardrobe Assistant", 
+            "workflows": ["outfit_generation", "travel_packing"],
+            "debug_endpoints": [
+                "/debug/page/<page_id>",
+                "/debug/travel/test/<page_id>",
+                "/health"
+            ],
+            "flask_available": FLASK_AVAILABLE,
+            "components_loaded": {
+                "notion_client": bool(_get_notion_client()),
+                "core_functions": len([f for f in _get_core_functions().values() if f is not None]),
+                "monitoring": bool(_get_monitoring()),
+                "cache": bool(_get_advanced_cache())
+            }
         }), 200
-    except Exception as e:
-        logging.error(f"Error generating health check response: {e}")
-        return jsonify({
-            "status": "unhealthy",
-            "error": "Failed to retrieve system metrics"
-        }), 500
-    # [END health_check_update]
 
-@app.route('/', methods=['GET'])
-def root():
-    """Root endpoint."""
-    return jsonify({
-        "message": "Unified AI Wardrobe Assistant", 
-        "workflows": ["outfit_generation", "travel_packing"],
-        "debug_endpoints": [
-            "/debug/page/<page_id>",
-            "/debug/travel/test/<page_id>",
-            "/health"
-        ]
-    }), 200
 
-if __name__ == '__main__':
+# Startup validation and initialization
+def initialize_server():
+    """Initialize server with comprehensive validation"""
     logging.info("🚀 Starting AI Wardrobe Assistant...")
+    
+    if not FLASK_AVAILABLE:
+        logging.error("❌ Flask not available. Server cannot start.")
+        return False
     
     if not check_environment_variables():
         logging.error("❌ Environment check failed. Exiting.")
-        sys.exit(1)
+        return False
     
-    # Test imports
+    # Test core imports
     try:
-        from core.travel_pipeline_orchestrator import travel_pipeline_orchestrator
-        logging.info("✅ Travel pipeline orchestrator imported successfully")
+        core_functions = _get_core_functions()
+        travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
+        outfit_pipeline = core_functions.get('run_enhanced_outfit_pipeline')
+        
+        if travel_orchestrator:
+            logging.info("✅ Travel pipeline orchestrator loaded successfully")
+        else:
+            logging.warning("⚠️  Travel pipeline orchestrator not available")
+        
+        if outfit_pipeline:
+            logging.info("✅ Outfit pipeline loaded successfully")
+        else:
+            logging.warning("⚠️  Outfit pipeline not available")
+            
     except Exception as e:
-        logging.error(f"❌ Failed to import travel orchestrator: {e}")
-        sys.exit(1)
+        logging.error(f"❌ Failed to load core components: {e}")
+        return False
     
-    port = int(os.environ.get('PORT', 5000))
-    logging.info(f"🌐 Starting server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    return True
+
+
+if __name__ == '__main__':
+    if initialize_server():
+        port = int(os.environ.get('PORT', 5000))
+        logging.info(f"🌐 Starting server on port {port}")
+        
+        if app:
+            app.run(host='0.0.0.0', port=port, debug=True)
+        else:
+            logging.error("❌ Flask app not initialized. Cannot start server.")
+            sys.exit(1)
+    else:
+        logging.error("❌ Server initialization failed. Exiting.")
+        sys.exit(1)
