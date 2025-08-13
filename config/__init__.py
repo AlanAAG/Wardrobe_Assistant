@@ -1,0 +1,6 @@
+from .travel_config import DESTINATIONS_CONFIG, WEIGHT_CONSTRAINTS
+
+__all__ = [
+    'DESTINATIONS_CONFIG',
+    'WEIGHT_CONSTRAINTS'
+]
