@@ -80,23 +80,23 @@ class TravelPipelineOrchestrator:
     async def ensure_ready(self):
         """Validate env and confirm Notion connectivity RIGHT BEFORE running."""
         self._validate_environment()
-        await self._test_notion_connectivity()
-
-        
+    
         # Configuration setup
         self.packing_guide_page_id = os.getenv("NOTION_PACKING_GUIDE_ID")
         self.wardrobe_db_id = os.getenv("NOTION_WARDROBE_DB_ID")
-        
+    
+        await self._test_notion_connectivity()
+    
         # Rate limiting configuration
         self.batch_size = 20
         self.batch_delay = 0.2  # seconds between batches
         self.api_retry_attempts = 3
         self.api_retry_delay = 1.0  # seconds
-        
+    
         # Performance tracking
         self.metrics = PipelineMetrics()
         self.current_stage = PipelineStage.INIT
-        
+    
         logging.info("✅ TravelPipelineOrchestrator initialized successfully")
         logging.info(f"   Initialization time: {(time.time() - self._start_time) * 1000:.1f}ms")
     
@@ -250,44 +250,44 @@ class TravelPipelineOrchestrator:
         """Enhanced trip configuration preparation with validation."""
         try:
             logging.info("🧳 Preparing enhanced trip configuration...")
-            
+        
             destinations_list = trigger_data.get("destinations", [])
-            user_preferences = trigger_data.get("preferences", {})
-            
+            user_preferences = trigger_data.get("preferences", []) # Correctly handle as a list
+        
             if not destinations_list:
                 logging.error("❌ No destinations specified in trigger data")
                 return None
-            
+        
             # Validate destinations against configuration
             for dest in destinations_list:
                 city = dest.get("city")
                 if not city or city not in DESTINATIONS_CONFIG:
                     logging.error(f"❌ Invalid destination: '{city}' not in {list(DESTINATIONS_CONFIG.keys())}")
                     return None
-            
+        
             logging.info("✅ All destinations validated")
-            
+        
             # Build comprehensive configuration
             trip_config = {
                 "destinations": destinations_list,
                 "user_preferences": user_preferences,
                 "trip_overview": self._calculate_trip_overview_enhanced(destinations_list),
                 "weight_constraints": WEIGHT_CONSTRAINTS,
-                "optimization_goals": user_preferences.get("optimization_goals", [
+                "optimization_goals": user_preferences if isinstance(user_preferences, list) else [
                     "weight_efficiency", "business_readiness", 
                     "climate_coverage", "cultural_compliance"
-                ])
+                ]
             }
-            
+        
             # Add destination analysis
             trip_config["destination_analysis"] = []
             for dest in destinations_list:
                 analysis = self._analyze_destination_requirements_enhanced(dest)
                 trip_config["destination_analysis"].append(analysis)
                 logging.info(f"   {dest['city']}: {analysis['duration_months']} months")
-            
+        
             return trip_config
-            
+        
         except Exception as e:
             logging.error(f"❌ Error in trip configuration preparation: {e}", exc_info=True)
             return None
