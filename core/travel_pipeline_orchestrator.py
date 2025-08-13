@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 from datetime import datetime, timedelta
+from core.travel_logic_fallback import travel_logic_fallback
 from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 from core.travel_packing_agent import travel_packing_agent
@@ -163,15 +164,38 @@ class TravelPipelineOrchestrator:
             except Exception as e:
                 logging.error(f"Groq API error: {e}", exc_info=True)
             
-            # Step 4: All AI methods failed - no logic fallback for travel (too complex)
-            logging.error("❌ All AI packing agents failed - travel optimization requires AI intelligence")
+            # Step 4: Try Rule-Based Fallback (Tertiary backup)
+            logging.info("🧳 Step 5: Attempting rule-based packing fallback...")
+            try:
+                packing_result = await asyncio.to_thread(
+                    travel_logic_fallback.generate_fallback_packing_list,
+                    trip_config, available_items
+                )
+                
+                if packing_result:
+                    logging.info("✅ Rule-based fallback generated packing list successfully")
+                    logging.info(f"   Items selected: {packing_result.get('total_items', 'unknown')}")
+                    logging.info(f"   Total weight: {packing_result.get('total_weight_kg', 'unknown')}kg")
+                    logging.info(f"   Business readiness: {packing_result.get('business_readiness', {}).get('readiness_score', 'unknown')}")
+                    
+                    return await self._finalize_packing_results(
+                        trigger_data.get("page_id"), packing_result, "rule_based_fallback", trip_config
+                    )
+                else:
+                    logging.error("Rule-based fallback could not generate packing list")
+                    
+            except Exception as e:
+                logging.error(f"Rule-based fallback error: {e}", exc_info=True)
+            
+            # Step 5: All methods failed (including fallback)
+            logging.error("❌ All packing methods failed - including rule-based fallback")
             return {
                 "success": False,
-                "error": "All AI agents failed - travel packing requires advanced AI reasoning",
+                "error": "All packing methods failed - AI agents and rule-based fallback unable to generate suitable packing list",
                 "page_id": trigger_data.get("page_id"),
-                "generation_method": "all_ai_failed",
-                "attempted_methods": ["gemini", "groq"],
-                "recommendation": "Check AI API connectivity and try again"
+                "generation_method": "all_methods_failed",
+                "attempted_methods": ["gemini", "groq", "rule_based_fallback"],
+                "recommendation": "Check wardrobe data availability and trip configuration"
             }
             
         except Exception as e:
@@ -473,7 +497,7 @@ class TravelPipelineOrchestrator:
     async def _update_trip_worthy_selections(self, selected_items: List[Dict]) -> None:
         """
         Update trip-worthy checkboxes in the wardrobe database for selected items
-        Uses batch updates for efficiency
+        Uses batch updates for efficiency and proper rate limiting
         """
         try:
             logging.info(f"🧳 Updating trip-worthy selections for {len(selected_items)} items...")
@@ -485,12 +509,12 @@ class TravelPipelineOrchestrator:
             logging.info(f"   Retrieved {len(all_items)} total items for updating")
             
             # Batch updates for efficiency
-            batch_size = 50
+            batch_size = 20  # Reduced for better rate limiting
             updated_count = 0
+            failed_count = 0
             
             for i in range(0, len(all_items), batch_size):
                 batch = all_items[i:i + batch_size]
-                batch_updates = []
                 
                 for item in batch:
                     item_id = item['id']
@@ -511,13 +535,20 @@ class TravelPipelineOrchestrator:
                             logging.debug(f"   ✅ Marked as trip-worthy: {item.get('item', item_id)}")
                     
                     except Exception as e:
+                        failed_count += 1
                         logging.warning(f"Failed to update trip-worthy for item {item_id}: {e}")
                 
-                # Small delay between batches to avoid rate limiting
+                # Add delay between batches to avoid rate limiting (FIXED: removed await)
                 if i + batch_size < len(all_items):
-                    await asyncio.sleep(0.1)
+                    import time
+                    time.sleep(0.2)  # 200ms delay between batches
+                    logging.debug(f"   Processed batch {i//batch_size + 1}/{(len(all_items)-1)//batch_size + 1}")
             
-            logging.info(f"✅ Updated trip-worthy selections: {len(selected_ids)} selected, {updated_count} items updated")
+            logging.info(f"✅ Trip-worthy update completed:")
+            logging.info(f"   Selected items: {len(selected_ids)}")
+            logging.info(f"   Updated successfully: {updated_count}")
+            logging.info(f"   Failed updates: {failed_count}")
+            logging.info(f"   Total processed: {len(all_items)}")
             
         except Exception as e:
             logging.error(f"❌ Error updating trip-worthy selections: {e}", exc_info=True)
