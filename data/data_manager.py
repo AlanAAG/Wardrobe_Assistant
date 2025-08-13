@@ -2,8 +2,6 @@ import json
 import os
 import logging
 from typing import List, Dict, Optional
-from data.supabase_client import supabase_client
-from data.notion_utils import get_wardrobe_items
 
 class WardrobeDataManager:
     """
@@ -14,6 +12,32 @@ class WardrobeDataManager:
     def __init__(self):
         self.cache_file = "wardrobe_cache.json"
         self.wardrobe_db_id = os.getenv("NOTION_WARDROBE_DB_ID")
+        
+        # Lazy loading containers
+        self._supabase_client = None
+        self._notion_utils = None
+    
+    def _get_supabase_client(self):
+        """Lazy import Supabase client to avoid circular dependencies."""
+        if self._supabase_client is None:
+            try:
+                from data.supabase_client import supabase_client
+                self._supabase_client = supabase_client
+            except ImportError as e:
+                logging.warning(f"Supabase client not available: {e}")
+                self._supabase_client = False  # Mark as unavailable
+        return self._supabase_client if self._supabase_client is not False else None
+    
+    def _get_notion_utils(self):
+        """Lazy import Notion utilities to avoid circular dependencies."""
+        if self._notion_utils is None:
+            try:
+                from data.notion_utils import get_wardrobe_items
+                self._notion_utils = get_wardrobe_items
+            except ImportError as e:
+                logging.error(f"Notion utils not available: {e}")
+                self._notion_utils = False
+        return self._notion_utils if self._notion_utils is not False else None
     
     def get_all_wardrobe_items(self) -> List[Dict]:
         """
@@ -24,7 +48,8 @@ class WardrobeDataManager:
         """
         # 1st: Try Supabase
         try:
-            if supabase_client.is_connected():
+            supabase_client = self._get_supabase_client()
+            if supabase_client and supabase_client.is_connected():
                 items = supabase_client.get_all_wardrobe_items()
                 if items:
                     logging.info(f"Retrieved {len(items)} items from Supabase")
@@ -76,7 +101,8 @@ class WardrobeDataManager:
         """
         # 1st: Try Supabase with native filtering (most efficient)
         try:
-            if supabase_client.is_connected():
+            supabase_client = self._get_supabase_client()
+            if supabase_client and supabase_client.is_connected():
                 items = supabase_client.get_filtered_wardrobe_items(
                     aesthetic=aesthetic,
                     weather_tag=weather_tag,
@@ -158,7 +184,8 @@ class WardrobeDataManager:
         Returns:
             True if sync successful, False otherwise
         """
-        if not supabase_client.is_connected():
+        supabase_client = self._get_supabase_client()
+        if not supabase_client or not supabase_client.is_connected():
             logging.warning("Cannot sync to Supabase - client not connected")
             return False
         
@@ -206,6 +233,10 @@ class WardrobeDataManager:
         if not self.wardrobe_db_id:
             raise Exception("NOTION_WARDROBE_DB_ID not set")
         
+        get_wardrobe_items = self._get_notion_utils()
+        if not get_wardrobe_items:
+            raise Exception("Notion utilities not available")
+        
         return get_wardrobe_items(self.wardrobe_db_id)
     
     def _apply_local_filters(self, items: List[Dict], aesthetic: str, weather_tag: str, 
@@ -246,14 +277,20 @@ class WardrobeDataManager:
     def get_data_stats(self) -> Dict:
         """Get statistics about data availability across all sources"""
         stats = {
-            'supabase_connected': supabase_client.is_connected(),
             'cache_available': os.path.exists(self.cache_file),
             'notion_configured': bool(self.wardrobe_db_id)
         }
         
+        # Check Supabase connection
+        supabase_client = self._get_supabase_client()
+        stats['supabase_connected'] = bool(supabase_client and supabase_client.is_connected())
+        
         # Add Supabase stats if available
         if stats['supabase_connected']:
-            stats['supabase_stats'] = supabase_client.get_wardrobe_stats()
+            try:
+                stats['supabase_stats'] = supabase_client.get_wardrobe_stats()
+            except Exception as e:
+                logging.warning(f"Failed to get Supabase stats: {e}")
         
         # Add cache stats if available
         if stats['cache_available']:
