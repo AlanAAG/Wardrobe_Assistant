@@ -61,6 +61,16 @@ def check_environment_variables():
     
     return True
 
+def _page_title(page):
+    """Extract the plain text title from a Notion page object."""
+    props = page.get("properties", {})
+    for prop in props.values():
+        if prop.get("type") == "title":
+            title_data = prop.get("title", [])
+            if title_data:
+                return "".join(t.get("plain_text", "") for t in title_data).strip()
+    return None
+
 @app.route('/webhook/notion', methods=['POST'])
 def handle_unified_notion_webhook():
     """
@@ -219,7 +229,7 @@ def handle_outfit_workflow(page_id):
         logging.info(f"Outfit trigger: aesthetic={trigger_data['aesthetics']}, prompt='{trigger_data['prompt']}'")
 
         
-        future = executor.submit(run_async_outfit_pipeline, trigger_data)
+        future = executor.submit(run_enhanced_outfit_pipeline, trigger_data)
 
 
         return jsonify({
