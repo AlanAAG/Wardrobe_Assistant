@@ -254,12 +254,21 @@ class TravelLogicFallback:
         modest_items = sum(1 for i in selected_items if i['category'] in ['Shirt', 'Chinos', 'Pants', 'Polo', 'Suit'])
         score = modest_items / len(selected_items) if selected_items else 0
         return {"compliance_score": round(score, 2), "modest_items_count": modest_items, "dubai_ready": score > 0.6}
+    
+    # In core/travel_logic_fallback.py
 
     def _generate_basic_packing_guide(self) -> Dict:
         """Generates a generic packing guide."""
         return {
-            "packing_techniques": ["Roll clothes to save space.", "Use packing cubes."],
-            "travel_day_strategy": {"wear_during_travel": ["Heaviest shoes and jacket."]}
+            "packing_techniques": [
+                "Roll casual items to save space",
+                "Fold formal items with care",
+                "Use packing cubes for organization"
+            ],
+            "travel_day_strategy": {
+                "wear_during_travel": ["Your heaviest shoes", "Your thickest jacket"],
+                "cabin_essentials": ["A change of clothes", "Essential documents", "Medications"]
+            }
         }
 
     def _generate_basic_trip_tips(self, trip_config: Dict) -> Dict:

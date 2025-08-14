@@ -1191,10 +1191,12 @@ class TravelPipelineOrchestrator:
     
         return blocks
     
+   # In core/travel_pipeline_orchestrator.py
+
     def _create_packing_guide_blocks_section(self, packing_result: Dict) -> List[Dict]:
         """Create packing organization guide section."""
-        guide = packing_result["packing_guide"]
-        
+        guide = packing_result.get("packing_guide", {})
+    
         blocks = [
             {
                 "object": "block",
@@ -1211,8 +1213,10 @@ class TravelPipelineOrchestrator:
                 }
             }
         ]
-        
-        for technique in guide["packing_techniques"]:
+    
+        # Safely get packing techniques
+        techniques = guide.get("packing_techniques", ["No techniques provided."])
+        for technique in techniques:
             blocks.append({
                 "object": "block",
                 "type": "bulleted_list_item",
@@ -1220,34 +1224,37 @@ class TravelPipelineOrchestrator:
                     "rich_text": [{"type": "text", "text": {"content": technique}}]
                 }
             })
-        
-        # Travel day strategy
-        blocks.append({
-            "object": "block",
-            "type": "heading_3",
-            "heading_3": {
-                "rich_text": [{"type": "text", "text": {"content": "✈️ Travel Day Strategy"}}]
-            }
-        })
-        
-        travel_strategy = guide["travel_day_strategy"]
-        blocks.extend([
-            {
+    
+        # Safely get travel day strategy
+        travel_strategy = guide.get("travel_day_strategy", {})
+        if travel_strategy:
+            blocks.append({
                 "object": "block",
-                "type": "bulleted_list_item",
-                "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Wear during travel: {', '.join(travel_strategy['wear_during_travel'])}"}}]
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": "✈️ Travel Day Strategy"}}]
                 }
-            },
-            {
-                "object": "block",
-                "type": "bulleted_list_item",
-                "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Cabin essentials: {', '.join(travel_strategy['cabin_essentials'])}"}}]
-                }
-            }
-        ])
+            })
+            wear_during_travel = travel_strategy.get("wear_during_travel", ["Not specified."])
+            cabin_essentials = travel_strategy.get("cabin_essentials", ["Not specified."])
         
+            blocks.extend([
+                {
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": f"Wear during travel: {', '.join(wear_during_travel)}"}}]
+                    }
+                },
+                {
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": f"Cabin essentials: {', '.join(cabin_essentials)}"}}]
+                    }   
+                }
+            ])
+    
         return blocks
     
     def _create_destination_tips_blocks(self, packing_result: Dict, trip_config: Dict) -> List[Dict]:
