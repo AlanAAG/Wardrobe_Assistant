@@ -24,7 +24,7 @@ def load_wardrobe_cache():
         data = json.load(f)
         return data.get("wardrobe", [])
 
-def main():
+def run_daily_outfit_pipeline():
     print("Loading wardrobe from cache...")
     wardrobe_items = load_wardrobe_cache()
 
@@ -65,4 +65,4 @@ def main():
     print("✅ Done! Your new outfit has been posted to Notion and fields cleared.")
 
 if __name__ == "__main__":
-    main()
+    run_daily_outfit_pipeline()

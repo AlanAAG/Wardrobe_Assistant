@@ -50,7 +50,7 @@ def test_imports():
         print("   ✅ travel_pipeline_orchestrator import successful")
         from core.travel_packing_agent import travel_packing_agent
         print("   ✅ travel_packing_agent import successful")
-        from api.webhook_server import get_travel_trigger_data
+        from services.webhook_server import get_travel_trigger_data
         print("   ✅ webhook_server functions import successful")
         return True
     except Exception as e:
@@ -77,7 +77,7 @@ async def test_data_extraction():
     """Tests the new data extraction logic in the webhook server."""
     print("\n🔧 Testing Raw Data Extraction...")
     try:
-        from api.webhook_server import get_travel_trigger_data
+        from services.webhook_server import get_travel_trigger_data
         page_id = os.getenv('NOTION_PACKING_GUIDE_ID')
         
         trigger_data = await asyncio.to_thread(get_travel_trigger_data, page_id)
@@ -101,7 +101,7 @@ async def run_full_pipeline_test():
     print("\n🚀 **RUNNING FULL END-TO-END PIPELINE TEST** 🚀")
     try:
         from core.travel_pipeline_orchestrator import travel_pipeline_orchestrator
-        from api.webhook_server import get_travel_trigger_data
+        from services.webhook_server import get_travel_trigger_data
 
         page_id = os.getenv('NOTION_PACKING_GUIDE_ID')
         print(f"   📡 Fetching real-time trigger data from Notion page: {page_id}")
@@ -116,9 +116,7 @@ async def run_full_pipeline_test():
         
         if result and result.get('success'):
             print("\n   🎉 **Full pipeline test SUCCESSFUL!** 🎉")
-            print(f"      AI Generation Method: {result.get('generation_method', 'unknown')}")
-            print(f"      Items Selected: {result.get('total_items_selected', 'unknown')}")
-            print(f"      Total Weight: {result.get('total_weight_kg', 'unknown')}kg")
+            print(f"      Execution time: {result.get('execution_time_ms', 'unknown')}ms")
             print("\n   ✅ Your Notion page should now be updated with the AI-generated packing list and example outfits.")
             return True
         else:
