@@ -1085,7 +1085,8 @@ class TravelPipelineOrchestrator:
                 }
             }
         ]
-    
+    # In core/travel_pipeline_orchestrator.py
+
     def _create_assessment_blocks(self, packing_result: Dict) -> List[Dict]:
         """Create comprehensive assessment section."""
         blocks = [
@@ -1097,11 +1098,11 @@ class TravelPipelineOrchestrator:
                 }
             }
         ]
-        
+
         # Business readiness
         business = packing_result["business_readiness"]
         status_emoji = "✅" if business["meets_requirements"] else "⚠️"
-        
+    
         blocks.extend([
             {
                 "object": "block",
@@ -1114,25 +1115,26 @@ class TravelPipelineOrchestrator:
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Readiness Score: {business['readiness_score']}/1.0"}}]
+                    "rich_text": [{"type": "text", "text": {"content": f"Readiness Score: {business.get('readiness_score', 0)}/1.0"}}]
                 }
             },
             {
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Business Suits: {business['suits_count']} (minimum 2 recommended)"}}]
+                    "rich_text": [{"type": "text", "text": {"content": f"Business Suits: {business.get('suits_count', 0)} (minimum 2 recommended)"}}]
                 }
             },
             {
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Dress Shoes: {business['dress_shoes_count', 0]}"}}]
+                    # THIS IS THE CORRECTED LINE
+                    "rich_text": [{"type": "text", "text": {"content": f"Dress Shoes: {business.get('dress_shoes_count', 0)}"}}]
                 }
             }
         ])
-        
+    
         # Climate coverage
         climate = packing_result["climate_coverage"]
         blocks.extend([
@@ -1147,22 +1149,22 @@ class TravelPipelineOrchestrator:
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Temperature Range: {climate['temperature_range_covered']}"}}]
+                    "rich_text": [{"type": "text", "text": {"content": f"Temperature Range: {climate.get('temperature_range_covered', 'N/A')}"}}]
                 }
             },
             {
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Coverage Quality: {climate['coverage_adequacy'].replace('_', ' ').title()}"}}]
+                    "rich_text": [{"type": "text", "text": {"content": f"Coverage Quality: {str(climate.get('coverage_adequacy', 'Unknown')).replace('_', ' ').title()}"}}]
                 }
             }
         ])
-        
+    
         # Cultural compliance
         cultural = packing_result["cultural_compliance"]
-        cultural_emoji = "✅" if cultural["dubai_ready"] else "⚠️"
-        
+        cultural_emoji = "✅" if cultural.get("dubai_ready") else "⚠️"
+    
         blocks.extend([
             {
                 "object": "block",
@@ -1175,18 +1177,18 @@ class TravelPipelineOrchestrator:
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Dubai Readiness: {'Ready' if cultural['dubai_ready'] else 'Needs Review'}"}}]
+                    "rich_text": [{"type": "text", "text": {"content": f"Dubai Readiness: {'Ready' if cultural.get('dubai_ready') else 'Needs Review'}"}}]
                 }
             },
             {
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Modest Items: {cultural['modest_items_count']}/{cultural['total_items']}"}}]
+                    "rich_text": [{"type": "text", "text": {"content": f"Modest Items: {cultural.get('modest_items_count', 0)}/{cultural.get('total_items', 0)}"}}]
                 }
             }
         ])
-        
+    
         return blocks
     
     def _create_packing_guide_blocks_section(self, packing_result: Dict) -> List[Dict]:
