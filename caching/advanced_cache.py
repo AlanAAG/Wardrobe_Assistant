@@ -603,16 +603,15 @@ class RedisCache(CacheLayer_Base):
         self._connection_attempted = True
         
         try:
-            # Import aioredis with graceful fallback
-            try:
-                import aioredis
-                self.redis_client = await aioredis.from_url(self.redis_url)
-                await self.redis_client.ping()
-                logging.info("Redis cache initialized successfully")
-                return True
-            except ImportError:
-                logging.warning("aioredis not available - Redis cache disabled")
-                return False
+            # Import the async client from the new redis library
+            from redis import asyncio as aioredis
+            self.redis_client = aioredis.from_url(self.redis_url)
+            await self.redis_client.ping()
+            logging.info("Redis cache initialized successfully")
+            return True
+        except ImportError:
+            logging.warning("redis-py (with async support) not available - Redis cache disabled")
+            return False
         except Exception as e:
             logging.error(f"Redis cache initialization failed: {e}")
             self.redis_client = None

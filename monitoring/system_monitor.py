@@ -10,7 +10,7 @@ from enum import Enum
 from collections import defaultdict, deque
 import statistics
 import aiofiles
-import aioredis
+from redis import asyncio as aioredis
 from abc import ABC, abstractmethod
 
 # Enhanced monitoring system for AI Wardrobe Management

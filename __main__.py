@@ -37,7 +37,7 @@ def check_dependencies():
         ('structlog', 'structlog'),
         ('aiofiles', 'aiofiles'),
         ('psutil', 'psutil'),
-        ('aioredis', 'aioredis')
+        ('redis', 'redis')
     ]
     
     missing = []
