@@ -255,17 +255,17 @@ class TravelPipelineOrchestrator:
 
     async def _prepare_trip_configuration_enhanced(self, trigger_data: Dict) -> Optional[Dict]:
         """
-        Prepares a lean configuration by passing raw user input directly to the AI agent
-        for dynamic analysis and interpretation.
+        Prepares a lean configuration by passing raw user input, including dynamic
+        bag limits, directly to the AI agent.
         """
         logging.info("🧳 Preparing raw trip configuration for AI analysis...")
     
-        # Directly use the raw data extracted from Notion
         trip_config = {
             "raw_destinations_and_dates": trigger_data.get("destinations", ""),
             "raw_preferences_and_purpose": trigger_data.get("preferences", ""),
             "dates": trigger_data.get("dates", {}),
-            "weight_constraints": WEIGHT_CONSTRAINTS,
+            "raw_bags": trigger_data.get("bags", []), # <-- ADD THIS LINE
+            "weight_constraints": WEIGHT_CONSTRAINTS, # We still pass this for non-clothes estimates
         }
     
         if not trip_config["raw_destinations_and_dates"] or not trip_config["dates"]:

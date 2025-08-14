@@ -405,21 +405,24 @@ class TravelPackingAgent:
     
     def _build_dynamic_service_prompt(self, context: Dict) -> str:
         """
-        Builds the definitive, AI-driven prompt using structured, dynamic user input
-        from Notion for the highest quality analysis.
+        Builds a fully dynamic, AI-driven prompt that instructs the model on how to analyze
+        raw user input, including dynamic bag limits, to generate a packing list.
         """
-        prompt = f"""You are an expert AI travel packing consultant. Your task is to analyze a user's travel plan, use your own world knowledge, and create the most weight-efficient and versatile packing list possible.
+        # Convert the list of bags into a readable string for the prompt
+        bags_string = ", ".join(context.get("raw_bags", ["Not specified"]))
+
+        prompt = f"""You are an expert AI travel packing consultant. Your task is to analyze a user's travel plan and wardrobe to create the most weight-efficient packing list possible.
 
     **USER'S TRAVEL PLAN FROM NOTION**
-    * **Destinations**: {", ".join(context['destinations'])}
-    * **Overall Trip Dates**: From {context['dates']['start']} to {context['dates']['end']}
-    * **Purpose, Itinerary & Preferences**: "{context['raw_preferences_and_purpose']}"
-    * **Weight Limit**: Absolute maximum of {context['weight_constraints']['clothes_allocation']['total_clothes_budget']}kg for all clothing.
+    * **Destinations & Dates**: "{context['raw_destinations_and_dates']}"
+    * **Purpose & Preferences**: "{context['raw_preferences_and_purpose']}"
+    * **Luggage Allowance**: {bags_string}
 
     **YOUR ANALYSIS PROCESS (Follow these steps):**
-    1.  **Analyze Itinerary**: First, parse the user's "Purpose, Itinerary & Preferences" to understand the timeline for each destination (e.g., "Dubai from September to December").
-    2.  **Determine Climate & Culture**: For each city and its specific timeline, use your knowledge to determine the expected seasons, temperature range (in Celsius), and cultural dress norms.
-    3.  **Synthesize a Plan**: Based on your analysis, create a packing strategy that balances all the user's needs.
+    1.  **Calculate Clothing Weight Budget**: First, calculate the total luggage weight allowance from the user's input (e.g., "Checked Bag: 23kg, Cabin Bag: 10kg" = 33kg total). Then, intelligently estimate a realistic portion of this total weight that should be allocated for clothes, reserving the rest for essentials like electronics, toiletries, and shoes. This will be your **Clothing Weight Budget**.
+    2.  **Analyze Itinerary**: Parse the user's input to identify the destinations, dates, and purpose of the trip.
+    3.  **Determine Climate & Culture**: For each destination and its timeline, use your knowledge to determine the expected climate and cultural dress norms.
+    4.  **Synthesize a Plan**: Based on all of the above, formulate a packing strategy that respects the **Clothing Weight Budget** you calculated in step 1.
 
     **AVAILABLE WARDROBE (SELECT ONLY FROM THIS LIST)**
     {self._format_items_with_intelligence(context["available_items"], context)}

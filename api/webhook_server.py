@@ -440,10 +440,8 @@ def get_outfit_trigger_data(page_id):
 
 def get_travel_trigger_data(page_id):
     """
-    Build the trigger_data for the travel pipeline using Notion page fields:
-      - Destinations (multi_select / relation / title/rich_text as CSV)
-      - Travel Preferences (multi_select or rich_text)
-      - Travel Dates (date range)
+    Builds the trigger_data for the travel pipeline by extracting the raw,
+    unprocessed data directly from the user's Notion page.
     """
     notion = _get_notion_client()
     if not notion:
@@ -453,37 +451,19 @@ def get_travel_trigger_data(page_id):
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
 
-        # --- Destinations ---
-        destinations = _read_destinations(props, page_id)
-
-        # --- Preferences ---
-        preferences = _read_preferences(props)
-
-        # --- Dates ---
-        date_info = _read_dates(props)
-        total_days = date_info["days"]
-
-        # distribute total days evenly across destinations if per-city durations are not provided
-        if destinations and total_days > 0:
-            base = total_days // len(destinations)
-            extra = total_days % len(destinations)
-            for i, d in enumerate(destinations):
-                d.setdefault("city", d.get("name", ""))
-                d["start_date"] = date_info["start"]
-                d["end_date"] = date_info["end"]
-                d["days"] = base + (1 if i < extra else 0)
-
+        # The function now extracts raw text for the AI to analyze,
+        # including the new dynamic bag information.
         return {
             "page_id": page_id,
-            "destinations": destinations,
-            "preferences": preferences,
-            "dates": date_info,
+            "destinations": _read_destinations(props, page_id),
+            "preferences": _read_preferences(props),
+            "dates": _read_dates(props),
+            "bags": _read_bags(props)
         }
     
     except Exception as e:
         logging.error(f"Error extracting travel trigger data: {e}")
         return None
-
 
 def _read_destinations(props, page_id):
     """Reads a list of destination city names from the multi-select property."""
@@ -520,6 +500,15 @@ def _read_dates(props):
                 days = 0
             return {"start": start, "end": end, "days": days}
     return {"start": "", "end": "", "days": 0}
+
+def _read_bags(props):
+    """Reads bag types and their weight limits from the multi-select property."""
+    for name in ["Bags & Weight Limits", "Luggage"]:
+        p = props.get(name)
+        if p and p.get("type") == "multi_select":
+            # Returns a list of strings, e.g., ["Checked Bag: 23kg", "Cabin Bag: 10kg"]
+            return [tag.get("name", "") for tag in p.get("multi_select", [])]
+    return []
 
 
 def run_async_outfit_pipeline(pipeline_func, trigger_data):
