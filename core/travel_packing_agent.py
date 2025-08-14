@@ -997,6 +997,61 @@ class TravelPackingAgent:
             return False
         
         return True
+    
+    def _build_example_outfits_prompt(self, selected_items: List[Dict], trip_config: Dict) -> str:
+        """Builds a prompt to generate three example outfits from the selected items."""
+        
+        trip_overview = trip_config.get("trip_overview", {})
+        destinations = ", ".join([d.get('city', '').title() for d in trip_config.get("destinations", [])])
+
+        prompt = f"""You are a fashion stylist creating example outfits from a pre-selected travel wardrobe.
+
+**CONTEXT**
+* **Trip**: A {trip_overview.get('total_duration_months', 'long')} month business school trip to {destinations}.
+* **Goal**: Create three distinct, stylish, and practical example outfits using ONLY the clothes provided below.
+
+**AVAILABLE ITEMS FOR OUTFITS**
+{self._format_items_with_intelligence(self._categorize_items_for_travel(selected_items), {})}
+
+**INSTRUCTIONS**
+1.  Create exactly three outfits: one for a business formal event, one for a business casual school day, and one for a casual weekend outing.
+2.  For each outfit, list the specific items used (top, bottom, footwear, and outerwear if appropriate).
+3.  Provide a brief, one-sentence recommendation or style tip for each outfit.
+4.  Your response must be ONLY the three outfits, formatted exactly like the example below.
+
+**EXAMPLE FORMAT:**
+OUTFIT 1: Business Formal
+* Items: [Item Name], [Item Name], [Item Name]
+* Recommendation: A classic and professional look perfect for networking events.
+
+OUTFIT 2: Business Casual
+* Items: [Item Name], [Item Name], [Item Name]
+* Recommendation: This versatile outfit is comfortable for classes and stylish enough for after-school study groups.
+
+OUTFIT 3: Weekend Exploration
+* Items: [Item Name], [Item Name], [Item Name]
+* Recommendation: A relaxed and cool outfit for exploring the city on a warm day.
+
+**YOUR RESPONSE:**
+"""
+        return prompt
+
+    async def generate_example_outfits(self, selected_items: List[Dict], trip_config: Dict, timeout: int = 45) -> Optional[str]:
+        """Generates three example outfits using Gemini."""
+        if not self.gemini_model:
+            logging.warning("Gemini model not available for generating example outfits.")
+            return None
+        
+        try:
+            prompt = self._build_example_outfits_prompt(selected_items, trip_config)
+            response = await asyncio.wait_for(
+                asyncio.to_thread(self.gemini_model.generate_content, prompt),
+                timeout=timeout
+            )
+            return response.text
+        except Exception as e:
+            logging.error(f"Failed to generate example outfits: {e}")
+            return None
 
 # Create global instance
 travel_packing_agent = TravelPackingAgent()

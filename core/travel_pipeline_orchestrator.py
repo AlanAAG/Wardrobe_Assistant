@@ -599,30 +599,47 @@ class TravelPipelineOrchestrator:
         return False, None, "Groq retry attempts exhausted"
     
     async def _finalize_packing_results_enhanced(self, page_id: str, packing_result: Dict, 
-                                               generation_method: str, trip_config: Dict,
-                                               pipeline_start: float) -> Dict:
-        """Enhanced results finalization with better error handling."""
+                                           generation_method: str, trip_config: Dict,
+                                           pipeline_start: float) -> Dict:
+        """
+        Enhanced results finalization with better error handling and the addition of example outfits.
+        """
         try:
             logging.info(f"🧳 Finalizing packing results using {generation_method}...")
             self._log_packing_summary(packing_result)
-            
+        
             # Step 1: Update trip-worthy selections with enhanced error handling
             await self._update_trip_worthy_selections_enhanced(packing_result["selected_items"])
-            
-            # Step 2: Clear and update Notion page
+        
+            # Step 2: Clear and update Notion page with the main packing guide
             await asyncio.to_thread(clear_page_content, page_id)
             await asyncio.to_thread(
                 self._post_comprehensive_packing_guide_enhanced,
                 page_id, packing_result, trip_config, generation_method
             )
-            
-            # Step 3: Clear trigger fields
+        
+            # Step 3: Generate and post example outfits to the Notion page
+            logging.info("👗 Generating example outfits from the selected wardrobe...")
+            example_outfits_text = await travel_packing_agent.generate_example_outfits(
+                packing_result["selected_items"], trip_config
+            )
+        
+            if example_outfits_text:
+                outfit_blocks = self._create_example_outfits_blocks(example_outfits_text)
+                await asyncio.to_thread(
+                    self._post_blocks_in_chunks, page_id, outfit_blocks
+                )
+                logging.info("✅ Example outfits posted to Notion.")
+            else:
+                logging.warning("⚠️ Could not generate example outfits.")
+
+            # Step 4: Clear trigger fields to reset the page for the next use
             await asyncio.to_thread(self._clear_travel_trigger_fields_safe, page_id)
-            
+        
             # Calculate final metrics
             total_time = (time.time() - pipeline_start) * 1000
-            
-            # Build comprehensive result
+        
+            # Build the final, successful result object
             final_result = {
                 "success": True,
                 "page_id": page_id,
@@ -641,15 +658,15 @@ class TravelPipelineOrchestrator:
                 "execution_time_ms": total_time,
                 "data_sources_used": await self._get_data_source_info_safe()
             }
-            
+        
             logging.info(f"✅ Finalization completed successfully")
             return final_result
-            
+        
         except Exception as e:
             logging.error(f"❌ Error in results finalization: {e}", exc_info=True)
             return {
                 "success": False,
-                "error": f"Finalization failed: {str(e)}",
+                "error": f"Failed to finalize outfit: {str(e)}",
                 "page_id": page_id,
                 "generation_method": f"{generation_method}_finalization_failed"
             }
@@ -739,6 +756,46 @@ class TravelPipelineOrchestrator:
         except Exception as e:
             logging.error(f"❌ Error in trip-worthy updates: {e}", exc_info=True)
             # Don't raise - this shouldn't fail the entire pipeline
+
+    def _create_example_outfits_blocks(self, outfit_text: str) -> List[Dict]:
+        """Creates Notion blocks for the example outfits section."""
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {"rich_text": [{"type": "text", "text": {"content": "💡 Example Outfit Ideas"}}]}
+            },
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Here are a few ways you can combine the selected items for different occasions:"}}]}
+            }
+        ]
+        
+        # Split the text into individual outfits
+        outfits = outfit_text.split("OUTFIT")[1:]
+        for outfit in outfits:
+            lines = outfit.strip().split('\n')
+            if not lines:
+                continue
+            
+            # Use the first line as the heading (e.g., "1: Business Formal")
+            title = lines[0].strip().replace(":", "")
+            blocks.append({
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {"rich_text": [{"type": "text", "text": {"content": title}}]}
+            })
+            
+            # Add the rest of the lines as bullet points
+            for line in lines[1:]:
+                blocks.append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": line.replace("*","").strip()}}]}
+                })
+
+        return blocks
     
     def _post_comprehensive_packing_guide_enhanced(self, page_id: str, packing_result: Dict, 
                                                  trip_config: Dict, generation_method: str) -> None:
