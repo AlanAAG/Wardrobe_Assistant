@@ -255,42 +255,24 @@ class TravelPipelineOrchestrator:
 
     async def _prepare_trip_configuration_enhanced(self, trigger_data: Dict) -> Optional[Dict]:
         """
-        Prepares a dynamic trip configuration by fetching real-time weather
-        and passing raw user preferences to the AI agent.
+        Prepares a lean configuration by passing raw user input directly to the AI agent
+        for dynamic analysis and interpretation.
         """
-        logging.info("🧳 Preparing DYNAMIC trip configuration for AI analysis...")
+        logging.info("🧳 Preparing raw trip configuration for AI analysis...")
     
-        # Analyze destinations from raw text
-        destinations_text = trigger_data.get("destinations", "")
-        # A simple parser to extract city names
-        cities = [city.strip() for city in destinations_text.split(',') if city.strip()]
-    
-        if not cities:
-            logging.error("❌ No destinations could be parsed from the input.")
-            return None
-
-        # Fetch real-time weather for each city and build the destination list
-        destinations_list = []
-        for city in cities:
-            try:
-                forecast = await asyncio.to_thread(get_weather_forecast, city=city)
-                destinations_list.append({
-                    "city": city,
-                    "weather_forecast": f"Avg Temp: {forecast['avg_temp']}°C, Condition: {forecast['condition']}"
-                })
-            except Exception as e:
-                logging.warning(f"⚠️ Could not fetch weather for {city}: {e}. The AI will use its general knowledge.")
-                destinations_list.append({"city": city, "weather_forecast": "Not available"})
-
+        # Directly use the raw data extracted from Notion
         trip_config = {
-            "destinations": destinations_list,
-            "raw_preferences": trigger_data.get("preferences", ""),
+            "raw_destinations_and_dates": trigger_data.get("destinations", ""),
+            "raw_preferences_and_purpose": trigger_data.get("preferences", ""),
             "dates": trigger_data.get("dates", {}),
             "weight_constraints": WEIGHT_CONSTRAINTS,
-            "business_requirements": BUSINESS_SCHOOL_REQUIREMENTS
         }
     
-        logging.info("✅ Dynamic trip configuration prepared with real-time weather.")
+        if not trip_config["raw_destinations_and_dates"] or not trip_config["dates"]:
+            logging.error("❌ Critical trip information (destinations or dates) is missing.")
+            return None
+        
+        logging.info("✅ Raw trip configuration prepared for AI agent.")
         return trip_config
     
     def _calculate_trip_overview_enhanced(self, destinations: List[Dict]) -> Dict:
