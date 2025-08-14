@@ -405,36 +405,33 @@ class TravelPackingAgent:
     
     def _build_comprehensive_service_prompt(self, context: Dict) -> str:
         """
-        Builds the definitive, optimized service prompt for Gemini, incorporating
-        structured context, clear instructions, and a few-shot example for reliability.
+        Builds a dynamic, AI-driven prompt that instructs the model on how to analyze
+        raw user input and generate a packing list.
         """
-        trip = context["trip_overview"]
-        destinations = context["destination_analysis"]
-        weights = context["weight_constraints"]
-        business = context["business_requirements"]
-        items = context["available_items"]
-    
-        prompt = f"""You are an expert AI travel packing consultant. Your task is to create the most weight-efficient and versatile packing list for a long-term business school trip.
+        prompt = f"""You are an expert AI travel packing consultant. Your task is to analyze raw user input, use your own world knowledge to fill in the gaps, and create the most weight-efficient and versatile packing list possible.
 
-    **MISSION BRIEFING**
-    * **Trip Type**: {trip["trip_type"].replace('_', ' ').title()}
-    * **Duration**: {trip["total_duration_months"]} months
-    * **Destinations**: {", ".join([d['city'].title() for d in destinations])}
-    * **Climate Challenge**: Cover a temperature range from {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C.
-    * **Weight Limit**: Absolute maximum of {weights["total_clothes_budget_kg"]}kg for all clothing.
-    * **Key Requirements**: The list must support {business["minimum_formal_outfits"]}+ 'Formal' outfits and {business["minimum_business_casual_outfits"]}+ business casual combinations.
+    **USER INPUT**
+    * **Destinations & Dates**: "{context['raw_destinations']}"
+    * **Trip Preferences**: "{context['raw_preferences']}"
+    * **Total Duration**: Approximately {context['dates']['days']} days.
+    * **Weight Limit**: Absolute maximum of {context['weight_constraints']['clothes_allocation']['total_clothes_budget']}kg for all clothing.
+
+    **YOUR ANALYSIS & REASONING PROCESS (Follow these steps):**
+    1.  **Parse Destinations**: First, identify the cities and the duration of the stay in each from the user's input.
+    2.  **Determine Climate**: For each city and its corresponding dates, use your knowledge to determine the expected seasons and temperature range (in Celsius).
+    3.  **Identify Key Requirements**: Analyze the user's preferences to understand the primary goals of the trip (e.g., "business casual," "minimalist," "take as many clothes as possible").
+    4.  **Synthesize a Plan**: Based on your climate and requirements analysis, formulate a high-level packing strategy.
 
     **AVAILABLE WARDROBE (SELECT ONLY FROM THIS LIST)**
-    {self._format_items_with_intelligence(items, context)}
+    {self._format_items_with_intelligence(context["available_items"], context)}
 
     **CRITICAL OUTPUT INSTRUCTIONS**
-    Your entire response must be ONLY the list of selected items under a single heading. Follow the format in this example exactly.
+    Your entire response must be ONLY the list of selected items under the heading "SELECTED_ITEMS:". Each item must be on a new line.
 
-    **EXAMPLE FORMAT:**
+    **EXAMPLE:**
     SELECTED_ITEMS:
     Black Slim Pants
     White Stan Smith
-    Playera Nautica Azul
 
     **YOUR RESPONSE:**
     SELECTED_ITEMS:
@@ -465,17 +462,35 @@ class TravelPackingAgent:
         """Builds the definitive, concise, Groq-optimized service prompt."""
     
         trip = context["trip_overview"]
+        destinations = context["destination_analysis"]
         weights = context["weight_constraints"]
+        business = context["business_requirements"]
         items = context["available_items"]
-    
-        prompt = f"""**TASK**: Create an optimized packing list for an 8-month business trip to Dubai and Gurgaon.
-    **CONSTRAINTS**: Max {weights["total_clothes_budget_kg"]}kg weight; cover {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C; needs 3+ formal and 10+ business casual outfits.
+
+        # Build the dynamic destination intelligence section
+        destination_intelligence = ""
+        for dest in destinations:
+            # Check if we have hardcoded data for this destination
+            if dest["city"] in self.destinations:
+                destination_intelligence += f"""
+    - **{dest["city"].upper()}**: Climate is {dest["climate_profile"]}, Modesty level is {dest["cultural_context"]["modesty_level"]}."""
+
+        prompt = f"""**TASK**: Create an optimized packing list for an 8-month business trip.
+
+    **CONSTRAINTS**:
+    * **Destinations**: {", ".join([d['city'].title() for d in destinations])}
+    * **Weight Limit**: Max {weights["total_clothes_budget_kg"]}kg for clothes.
+    * **Climate**: Must cover {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C.
+    * **Requirements**: Needs {business["minimum_formal_outfits"]}+ formal and {business["minimum_business_casual_outfits"]}+ business casual outfits. Be mindful of cultural norms.
+
+    **DESTINATION INTELLIGENCE**:
+    Use this information. For any city not listed, use your general knowledge.{destination_intelligence}
 
     **AVAILABLE ITEMS (SELECT ONLY FROM THIS LIST):**
     {self._format_items_with_intelligence(items, context)}
 
     **OUTPUT INSTRUCTIONS**:
-    Your response must ONLY be a list of the exact item names under the heading "SELECTED_ITEMS:", with each item on a new line. Do not add any other text.
+    Your response must ONLY be a list of the exact item names under the heading "SELECTED_ITEMS:", with each item on a new line.
 
     **EXAMPLE:**
     SELECTED_ITEMS:

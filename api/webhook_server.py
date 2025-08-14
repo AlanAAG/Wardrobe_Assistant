@@ -486,62 +486,25 @@ def get_travel_trigger_data(page_id):
 
 
 def _read_destinations(props, page_id):
-    """Read destinations from various property types"""
-    notion = _get_notion_client()
-    if not notion:
-        return []
-        
-    # try a few likely property names
+    """Reads the raw text from the Destinations property."""
     for name in ["Destinations", "Locations", "Cities"]:
         p = props.get(name)
         if not p:
             continue
-        typ = p.get("type")
-        try:
-            if typ == "multi_select":
-                return [{"city": tag["name"]} for tag in p.get("multi_select", [])]
-            if typ == "relation":
-                out = []
-                for rel in p.get("relation", []):
-                    try:
-                        rel_page = notion.pages.retrieve(page_id=rel["id"])
-                        title = _page_title(rel_page)
-                        if title:
-                            out.append({"city": title})
-                    except Exception as e:
-                        logging.warning(f"Failed to retrieve relation page {rel['id']}: {e}")
-                        continue
-                return out
-            if typ in ("title", "rich_text"):
-                txt = ",".join(
-                    t.get("plain_text", "") for t in p.get(typ, [])
-                )
-                names = [s.strip() for s in txt.split(",") if s.strip()]
-                return [{"city": n} for n in names]
-        except Exception as e:
-            logging.warning(f"⚠️ Failed to parse '{name}' for page {page_id}: {e}", exc_info=True)
-            continue
-    # if nothing found, return empty list (pipeline will error out nicely)
-    return []
-
+        # Simply extract the raw text content, regardless of property type
+        if p.get("type") == "multi_select":
+            return ", ".join([tag.get("name", "") for tag in p.get("multi_select", [])])
+        if p.get("type") in ("title", "rich_text"):
+            return "".join(t.get("plain_text", "") for t in p.get(p.get("type"), []))
+    return ""
 
 def _read_preferences(props):
-    """Read travel preferences from various property types"""
+    """Reads the raw text from the Travel Preferences property."""
     for name in ["Travel Preferences", "Trip Preferences", "Preferences"]:
         p = props.get(name)
-        if not p:
-            continue
-        typ = p.get("type")
-        if typ == "multi_select":
-            return [tag["name"] for tag in p.get("multi_select", [])]
-        if typ == "rich_text":
-            return [
-                t.get("plain_text", "").strip()
-                for t in p.get("rich_text", [])
-                if t.get("plain_text", "").strip()
-            ]
-    return []
-
+        if p and p.get("type") == "rich_text":
+            return "".join(t.get("plain_text", "") for t in p.get("rich_text", [])).strip()
+    return ""
 
 def _read_dates(props):
     """Read travel dates from date properties"""

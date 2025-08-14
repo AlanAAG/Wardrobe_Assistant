@@ -258,7 +258,7 @@ class TravelLogicFallback:
     # In core/travel_logic_fallback.py
 
     def _generate_basic_packing_guide(self) -> Dict:
-        """Generates a generic packing guide."""
+        """Generates a generic packing guide with the correct data structure."""
         return {
             "packing_techniques": [
                 "Roll casual items to save space",

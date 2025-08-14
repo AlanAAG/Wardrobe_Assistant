@@ -13,13 +13,14 @@ from dotenv import load_dotenv
 from core.travel_logic_fallback import travel_logic_fallback
 from core.travel_packing_agent import travel_packing_agent
 from data.data_manager import wardrobe_data_manager
+from data.weather_utils import get_weather_forecast # Add this import at the top of the file
 from data.notion_utils import (
     notion,
     clear_page_content,
     clear_trigger_fields,
     retrieve_page_blocks
 )
-from config.travel_config import DESTINATIONS_CONFIG, WEIGHT_CONSTRAINTS
+from config.travel_config import BUSINESS_SCHOOL_REQUIREMENTS, DESTINATIONS_CONFIG, WEIGHT_CONSTRAINTS
 
 # Import for monitoring integration
 try:
@@ -250,51 +251,47 @@ class TravelPipelineOrchestrator:
             logging.info(f"     {dest.get('city', 'unknown')}: {dest.get('start_date', 'N/A')} to {dest.get('end_date', 'N/A')}")
         logging.info(f"   Preferences: {preferences}")
     
+    from data.weather_utils import get_weather_forecast # Add this import at the top of the file
+
     async def _prepare_trip_configuration_enhanced(self, trigger_data: Dict) -> Optional[Dict]:
-        """Enhanced trip configuration preparation with validation."""
-        try:
-            logging.info("🧳 Preparing enhanced trip configuration...")
-        
-            destinations_list = trigger_data.get("destinations", [])
-            user_preferences = trigger_data.get("preferences", []) # Correctly handle as a list
-        
-            if not destinations_list:
-                logging.error("❌ No destinations specified in trigger data")
-                return None
-        
-            # Validate destinations against configuration
-            for dest in destinations_list:
-                city = dest.get("city")
-                if not city or city not in DESTINATIONS_CONFIG:
-                    logging.error(f"❌ Invalid destination: '{city}' not in {list(DESTINATIONS_CONFIG.keys())}")
-                    return None
-        
-            logging.info("✅ All destinations validated")
-        
-            # Build comprehensive configuration
-            trip_config = {
-                "destinations": destinations_list,
-                "user_preferences": user_preferences,
-                "trip_overview": self._calculate_trip_overview_enhanced(destinations_list),
-                "weight_constraints": WEIGHT_CONSTRAINTS,
-                "optimization_goals": user_preferences if isinstance(user_preferences, list) else [
-                    "weight_efficiency", "business_readiness", 
-                    "climate_coverage", "cultural_compliance"
-                ]
-            }
-        
-            # Add destination analysis
-            trip_config["destination_analysis"] = []
-            for dest in destinations_list:
-                analysis = self._analyze_destination_requirements_enhanced(dest)
-                trip_config["destination_analysis"].append(analysis)
-                logging.info(f"   {dest['city']}: {analysis['duration_months']} months")
-        
-            return trip_config
-        
-        except Exception as e:
-            logging.error(f"❌ Error in trip configuration preparation: {e}", exc_info=True)
+        """
+        Prepares a dynamic trip configuration by fetching real-time weather
+        and passing raw user preferences to the AI agent.
+        """
+        logging.info("🧳 Preparing DYNAMIC trip configuration for AI analysis...")
+    
+        # Analyze destinations from raw text
+        destinations_text = trigger_data.get("destinations", "")
+        # A simple parser to extract city names
+        cities = [city.strip() for city in destinations_text.split(',') if city.strip()]
+    
+        if not cities:
+            logging.error("❌ No destinations could be parsed from the input.")
             return None
+
+        # Fetch real-time weather for each city and build the destination list
+        destinations_list = []
+        for city in cities:
+            try:
+                forecast = await asyncio.to_thread(get_weather_forecast, city=city)
+                destinations_list.append({
+                    "city": city,
+                    "weather_forecast": f"Avg Temp: {forecast['avg_temp']}°C, Condition: {forecast['condition']}"
+                })
+            except Exception as e:
+                logging.warning(f"⚠️ Could not fetch weather for {city}: {e}. The AI will use its general knowledge.")
+                destinations_list.append({"city": city, "weather_forecast": "Not available"})
+
+        trip_config = {
+            "destinations": destinations_list,
+            "raw_preferences": trigger_data.get("preferences", ""),
+            "dates": trigger_data.get("dates", {}),
+            "weight_constraints": WEIGHT_CONSTRAINTS,
+            "business_requirements": BUSINESS_SCHOOL_REQUIREMENTS
+        }
+    
+        logging.info("✅ Dynamic trip configuration prepared with real-time weather.")
+        return trip_config
     
     def _calculate_trip_overview_enhanced(self, destinations: List[Dict]) -> Dict:
         """Calculate enhanced trip overview with detailed metrics."""
