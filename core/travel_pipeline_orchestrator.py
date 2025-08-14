@@ -240,32 +240,27 @@ class TravelPipelineOrchestrator:
             )
     
     def _log_trigger_data(self, trigger_data: Dict) -> None:
-        """Log trigger data with proper formatting."""
-        destinations = trigger_data.get("destinations", [])
-        preferences = trigger_data.get("preferences", {})
-        
+        """Logs the raw trigger data received from the Notion page."""
         logging.info(f"🧳 Pipeline trigger data:")
         logging.info(f"   Page ID: {trigger_data.get('page_id', 'unknown')}")
-        logging.info(f"   Destinations: {len(destinations)} cities")
-        for dest in destinations:
-            logging.info(f"     {dest.get('city', 'unknown')}: {dest.get('start_date', 'N/A')} to {dest.get('end_date', 'N/A')}")
-        logging.info(f"   Preferences: {preferences}")
-    
-    from data.weather_utils import get_weather_forecast # Add this import at the top of the file
+        logging.info(f"   Destinations Input: \"{trigger_data.get('raw_destinations_and_dates', 'N/A')}\"")
+        logging.info(f"   Preferences Input: \"{trigger_data.get('raw_preferences_and_purpose', 'N/A')}\"")
+        logging.info(f"   Bags Input: {', '.join(trigger_data.get('bags', ['N/A']))}")
 
     async def _prepare_trip_configuration_enhanced(self, trigger_data: Dict) -> Optional[Dict]:
         """
-        Prepares a lean configuration by passing raw user input, including dynamic
-        bag limits, directly to the AI agent.
+        Prepares a lean configuration by passing raw user input directly to the AI agent
+        for dynamic analysis and interpretation.
         """
         logging.info("🧳 Preparing raw trip configuration for AI analysis...")
     
         trip_config = {
+            "page_id": trigger_data.get("page_id"),
             "raw_destinations_and_dates": trigger_data.get("destinations", ""),
             "raw_preferences_and_purpose": trigger_data.get("preferences", ""),
             "dates": trigger_data.get("dates", {}),
-            "raw_bags": trigger_data.get("bags", []), # <-- ADD THIS LINE
-            "weight_constraints": WEIGHT_CONSTRAINTS, # We still pass this for non-clothes estimates
+            "bags": trigger_data.get("bags", []),
+            "weight_constraints": WEIGHT_CONSTRAINTS,
         }
     
         if not trip_config["raw_destinations_and_dates"] or not trip_config["dates"]:
@@ -274,6 +269,7 @@ class TravelPipelineOrchestrator:
         
         logging.info("✅ Raw trip configuration prepared for AI agent.")
         return trip_config
+
     
     def _calculate_trip_overview_enhanced(self, destinations: List[Dict]) -> Dict:
         """Calculate enhanced trip overview with detailed metrics."""

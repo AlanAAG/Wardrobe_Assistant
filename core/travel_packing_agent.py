@@ -56,84 +56,82 @@ class TravelPackingAgent:
         # Initialize analysis modules
         self.current_destinations = []
     
-    async def generate_multi_destination_packing_list(self, trip_config: Dict, available_items: Dict, timeout: int = 30) -> Tuple[bool, Optional[Dict], Optional[str]]:
+    async def generate_multi_destination_packing_list(self, trip_config: Dict, available_items: Dict, timeout: int = 120) -> Tuple[bool, Optional[Dict], Optional[str]]:
         """
-        Primary method: Generate comprehensive packing list using Gemini API
-        
+        Primary method: Generate a comprehensive packing list using the Gemini API
+        by providing it with raw user input for dynamic analysis.
+    
         Args:
-            trip_config: Trip configuration with destinations, dates, constraints
-            available_items: Dictionary of available wardrobe items by category
-            timeout: API timeout in seconds
-            
+            trip_config: Raw trip configuration data from Notion.
+            available_items: Dictionary of available wardrobe items by category.
+            timeout: API timeout in seconds.
+        
         Returns:
             Tuple of (success: bool, packing_result: Dict, error_message: str)
         """
         if not self.gemini_model:
             return False, None, "Gemini API not configured"
-        
+    
         try:
-            self.current_destinations = [dest["city"] for dest in trip_config["destinations"]]
-            
-            # Prepare comprehensive context
+            # The agent no longer pre-processes the trip config; it prepares it for the AI.
             context = self._prepare_travel_context(trip_config, available_items)
-            
-            # Build specialized service prompt
+        
+            # Build the new, fully dynamic service prompt
             service_prompt = self._build_dynamic_service_prompt(context)
-            
-            # Generate response with timeout
+        
+            # Generate response with an extended timeout for complex analysis
             response = await asyncio.wait_for(
                 asyncio.to_thread(self.gemini_model.generate_content, service_prompt),
                 timeout=timeout
             )
-            
+        
             if not response.text:
-                return False, None, "Gemini returned empty response"
-            
-            # Parse response and optimize selection
+                return False, None, "Gemini returned an empty response"
+        
+            # Parse the AI's response and finalize the packing list
             packing_result = self._parse_and_optimize_packing_response(
                 response.text, available_items, trip_config
             )
-            
+        
             if not packing_result:
-                return False, None, "Failed to parse valid packing list"
-            
-            logging.info(f"Gemini generated packing list with {packing_result['total_items']} items")
+                return False, None, "Failed to parse a valid packing list from the AI's response"
+        
+            logging.info(f"Gemini generated a packing list with {packing_result['total_items']} items")
             return True, packing_result, None
-            
+        
         except asyncio.TimeoutError:
             error_msg = f"Gemini API timeout after {timeout} seconds"
             logging.error(error_msg)
             return False, None, error_msg
         except Exception as e:
-            error_msg = f"Gemini API error: {str(e)}"
-            logging.error(error_msg)
+            error_msg = f"An unexpected Gemini API error occurred: {str(e)}"
+            logging.error(error_msg, exc_info=True)
             return False, None, error_msg
     
-    async def generate_packing_list_with_groq(self, trip_config: Dict, available_items: Dict, timeout: int = 25) -> Tuple[bool, Optional[Dict], Optional[str]]:
+    async def generate_packing_list_with_groq(self, trip_config: Dict, available_items: Dict, timeout: int = 90) -> Tuple[bool, Optional[Dict], Optional[str]]:
         """
-        Secondary method: Generate packing list using Groq API as fallback
-        
+        Secondary method: Generate a packing list using the Groq API as a fast fallback,
+        providing it with raw user input for dynamic analysis.
+    
         Args:
-            trip_config: Trip configuration
-            available_items: Available wardrobe items
-            timeout: API timeout in seconds
-            
+            trip_config: Raw trip configuration data from Notion.
+            available_items: Dictionary of available wardrobe items by category.
+            timeout: API timeout in seconds.
+        
         Returns:
             Tuple of (success: bool, packing_result: Dict, error_message: str)
         """
         if not self.groq_client:
             return False, None, "Groq API not configured"
-        
+    
         try:
-            self.current_destinations = [dest["city"] for dest in trip_config["destinations"]]
-            
-            # Prepare context
+            # The agent prepares the raw context for the AI prompt
             context = self._prepare_travel_context(trip_config, available_items)
-            
-            # Build Groq-optimized prompt
-            service_prompt = self._build_dynamic_service_prompt(context)
-            
-            # Generate response with timeout
+        
+            # Build the new, specialized, and highly concise Groq prompt
+            service_prompt = self._build_groq_service_prompt(context)
+        
+            # Generate response using Groq with a suitable timeout
             chat_completion = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.groq_client.chat.completions.create,
@@ -141,28 +139,26 @@ class TravelPackingAgent:
                         {"role": "system", "content": self._get_groq_system_prompt()},
                         {"role": "user", "content": service_prompt}
                     ],
-                    model="llama3-8b-8192",
-                    temperature=0.2,  # Lower temperature for consistent packing decisions
-                    max_tokens=2000,  # More tokens for comprehensive packing lists
-                    top_p=0.85
+                    model="llama3-8b-8192",  # A fast and capable model
+                    temperature=0.2,
+                    max_tokens=2000
                 ),
                 timeout=timeout
             )
-            
+        
             response_text = chat_completion.choices[0].message.content
-            
             if not response_text:
-                return False, None, "Groq returned empty response"
-            
-            # Parse and optimize
+                return False, None, "Groq returned an empty response"
+        
+            # Parse the AI's response and finalize the packing list
             packing_result = self._parse_and_optimize_packing_response(
                 response_text, available_items, trip_config
             )
-            
+        
             if not packing_result:
-                return False, None, "Failed to parse valid packing list"
-            
-            logging.info(f"Groq generated packing list with {packing_result['total_items']} items")
+                return False, None, "Failed to parse a valid packing list from Groq's response"
+        
+            logging.info(f"Groq generated a packing list with {packing_result['total_items']} items")
             return True, packing_result, None
             
         except asyncio.TimeoutError:
@@ -170,167 +166,9 @@ class TravelPackingAgent:
             logging.error(error_msg)
             return False, None, error_msg
         except Exception as e:
-            error_msg = f"Groq API error: {str(e)}"
-            logging.error(error_msg)
+            error_msg = f"An unexpected Groq API error occurred: {str(e)}"
+            logging.error(error_msg, exc_info=True)
             return False, None, error_msg
-    
-    def _prepare_travel_context(self, trip_config: Dict, available_items: Dict) -> Dict:
-        """Prepare comprehensive context for AI processing"""
-        
-        context = {
-            "trip_overview": self._analyze_trip_overview(trip_config),
-            "destination_analysis": self._analyze_destinations(trip_config["destinations"]),
-            "weight_constraints": self._calculate_weight_constraints(),
-            "business_requirements": self._analyze_business_requirements(),
-            "available_items": available_items,
-            "optimization_strategy": self._define_optimization_strategy(trip_config)
-        }
-        
-        # Add item analysis
-        context["item_analysis"] = self._analyze_available_items(available_items)
-        
-        return context
-    
-    def _analyze_trip_overview(self, trip_config: Dict) -> Dict:
-        """Analyze overall trip characteristics"""
-        destinations = trip_config["destinations"]
-        
-        # Calculate total duration
-        start_date = datetime.strptime(destinations[0]["start_date"], "%Y-%m-%d")
-        end_date = datetime.strptime(destinations[-1]["end_date"], "%Y-%m-%d")
-        total_duration = (end_date - start_date).days
-        
-        # Analyze temperature range across all destinations/seasons
-        temp_range = self._calculate_temperature_range(destinations)
-        
-        # Identify critical challenges
-        challenges = self._identify_packing_challenges(destinations)
-        
-        return {
-            "total_duration_days": total_duration,
-            "total_duration_months": round(total_duration / 30, 1),
-            "destination_count": len(destinations),
-            "temperature_range": temp_range,
-            "climate_diversity": len(set(self.destinations[d["city"]]["climate_profile"] for d in destinations)),
-            "critical_challenges": challenges,
-            "trip_type": "long_term_business_school_relocation"
-        }
-    
-    def _calculate_temperature_range(self, destinations: List[Dict]) -> Dict:
-        """Calculate temperature range across all destinations and seasons"""
-        min_temp = float('inf')
-        max_temp = float('-inf')
-        
-        for dest in destinations:
-            city_config = self.destinations[dest["city"]]
-            months = self._get_months_in_destination(dest["start_date"], dest["end_date"])
-            
-            for month in months:
-                if month in city_config["seasons"]:
-                    temp_range = city_config["seasons"][month]["temp_range"]
-                    min_temp = min(min_temp, temp_range[0])
-                    max_temp = max(max_temp, temp_range[1])
-        
-        return {
-            "min": min_temp,
-            "max": max_temp,
-            "span": max_temp - min_temp
-        }
-    
-    def _get_months_in_destination(self, start_date: str, end_date: str) -> List[str]:
-        """Get months covered in a destination stay"""
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-        
-        months = []
-        current = start.replace(day=1)
-        while current <= end:
-            months.append(current.strftime("%B").lower())
-            if current.month == 12:
-                current = current.replace(year=current.year + 1, month=1)
-            else:
-                current = current.replace(month=current.month + 1)
-        
-        return months
-    
-    def _identify_packing_challenges(self, destinations: List[Dict]) -> List[str]:
-        """Identify critical packing challenges"""
-        challenges = []
-        
-        # Temperature span challenge
-        temp_range = self._calculate_temperature_range(destinations)
-        if temp_range["span"] > 30:
-            challenges.append(f"extreme_temperature_range_{temp_range['span']}C")
-        
-        # Climate diversity
-        climates = set(self.destinations[d["city"]]["climate_profile"] for d in destinations)
-        if len(climates) > 1:
-            challenges.append("multi_climate_adaptation")
-        
-        # Cultural requirements
-        if any("high" in self.destinations[d["city"]]["cultural_context"]["modesty_level"] 
-               for d in destinations):
-            challenges.append("high_cultural_modesty_requirements")
-        
-        # Seasonal transitions
-        challenges.append("seasonal_transitions")
-        
-        return challenges
-    
-    def _analyze_destinations(self, destinations: List[Dict]) -> List[Dict]:
-        """Detailed analysis of each destination"""
-        analysis = []
-        
-        for dest in destinations:
-            city_config = self.destinations[dest["city"]]
-            
-            # Calculate seasonal progression
-            months = self._get_months_in_destination(dest["start_date"], dest["end_date"])
-            seasonal_analysis = self._analyze_seasonal_progression(city_config, months)
-            
-            dest_analysis = {
-                "city": dest["city"],
-                "duration_months": len(months),
-                "months": months,
-                "climate_profile": city_config["climate_profile"],
-                "seasonal_analysis": seasonal_analysis,
-                "cultural_requirements": city_config["cultural_context"],
-                "weight_priorities": city_config["weight_priorities"],
-                "activity_requirements": city_config["activity_types"],
-                "climate_recommendations": city_config["climate_recommendations"]
-            }
-            
-            analysis.append(dest_analysis)
-        
-        return analysis
-    
-    def _analyze_seasonal_progression(self, city_config: Dict, months: List[str]) -> Dict:
-        """Analyze how seasons progress in a destination"""
-        temp_progression = []
-        challenges = []
-        
-        for month in months:
-            if month in city_config["seasons"]:
-                season_data = city_config["seasons"][month]
-                temp_progression.append({
-                    "month": month,
-                    "temp_range": season_data["temp_range"],
-                    "weather": season_data["weather"]
-                })
-                
-                # Add specific challenges
-                if "monsoon" in season_data.get("weather", ""):
-                    challenges.append("monsoon_preparation")
-                if season_data["temp_range"][1] > 35:
-                    challenges.append("extreme_heat")
-                if season_data["temp_range"][0] < 10:
-                    challenges.append("cold_weather")
-        
-        return {
-            "temp_progression": temp_progression,
-            "challenges": challenges,
-            "months_count": len(months)
-        }
     
     def _calculate_weight_constraints(self) -> Dict:
         """Calculate realistic weight constraints"""
@@ -429,6 +267,34 @@ class TravelPackingAgent:
 
     **CRITICAL OUTPUT INSTRUCTIONS**
     Your entire response must be ONLY a list of the selected items under the heading "SELECTED_ITEMS:". Each item must be on a new line.
+
+    **YOUR RESPONSE:**
+    SELECTED_ITEMS:
+    """
+        return prompt
+    
+    def _build_groq_service_prompt(self, context: Dict) -> str:
+        """
+        Builds a definitive, highly concise, Groq-optimized service prompt that
+        leverages the model's speed and efficiency.
+        """
+        prompt = f"""**TASK**: Analyze the user's travel plan and create an optimized packing list.
+
+    **USER INPUT**:
+    * **Destinations & Dates**: "{context['raw_destinations_and_dates']}"
+    * **Purpose & Preferences**: "{context['raw_preferences_and_purpose']}"
+    * **Luggage**: {", ".join(context.get('bags', ["Not specified"]))}
+
+    **ANALYSIS & SELECTION PROCESS**:
+    1.  **Calculate Clothing Budget**: Estimate a realistic weight for clothes from the user's luggage allowance.
+    2.  **Analyze Trip**: Parse the user's input to determine climate, cultural norms, and key activities.
+    3.  **Select Items**: Choose the most versatile and weight-efficient items from the available wardrobe that meet all trip requirements and respect the calculated weight budget.
+
+    **AVAILABLE WARDROBE (SELECT ONLY FROM THIS LIST):**
+    {self._format_items_with_intelligence(context["available_items"], context)}
+
+    **OUTPUT INSTRUCTIONS**:
+    Your response must ONLY be a list of the exact item names under the heading "SELECTED_ITEMS:", with each item on a new line.
 
     **YOUR RESPONSE:**
     SELECTED_ITEMS:
