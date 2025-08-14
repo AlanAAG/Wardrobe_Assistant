@@ -568,51 +568,55 @@ class TravelPipelineOrchestrator:
         }
     
     async def _try_gemini_with_retry(self, trip_config: Dict, available_items: Dict) -> Tuple[bool, Optional[Dict], Optional[str]]:
-        """Try Gemini API with retry logic."""
+        """Try Gemini API with retry logic and enhanced error logging."""
         for attempt in range(self.api_retry_attempts):
             try:
                 if attempt > 0:
                     await asyncio.sleep(self.api_retry_delay * attempt)
                     logging.info(f"   Gemini retry attempt {attempt + 1}/{self.api_retry_attempts}")
-                
+            
+                # Use a generous timeout for the AI
                 return await travel_packing_agent.generate_multi_destination_packing_list(
-                    trip_config, available_items, timeout=90
+                    trip_config, available_items, timeout=120
                 )
-                
+            
             except asyncio.TimeoutError:
+                logging.warning(f"   Gemini timeout on attempt {attempt + 1}")
                 if attempt == self.api_retry_attempts - 1:
                     return False, None, f"Gemini timeout after {self.api_retry_attempts} attempts"
-                logging.warning(f"   Gemini timeout on attempt {attempt + 1}")
                 
             except Exception as e:
+                # THIS IS THE CRITICAL ADDITION: Log the specific error
+                logging.error(f"   Gemini error on attempt {attempt + 1}: {str(e)}", exc_info=True)
                 if attempt == self.api_retry_attempts - 1:
                     return False, None, f"Gemini error: {str(e)}"
-                logging.warning(f"   Gemini error on attempt {attempt + 1}: {e}")
-        
-        return False, None, "Gemini retry attempts exhausted"
     
+        return False, None, "Gemini retry attempts exhausted"
+
+
     async def _try_groq_with_retry(self, trip_config: Dict, available_items: Dict) -> Tuple[bool, Optional[Dict], Optional[str]]:
-        """Try Groq API with retry logic."""
+        """Try Groq API with retry logic and enhanced error logging."""
         for attempt in range(self.api_retry_attempts):
             try:
                 if attempt > 0:
                     await asyncio.sleep(self.api_retry_delay * attempt)
                     logging.info(f"   Groq retry attempt {attempt + 1}/{self.api_retry_attempts}")
-                
+            
                 return await travel_packing_agent.generate_packing_list_with_groq(
                     trip_config, available_items, timeout=90
                 )
-                
+            
             except asyncio.TimeoutError:
+                logging.warning(f"   Groq timeout on attempt {attempt + 1}")
                 if attempt == self.api_retry_attempts - 1:
                     return False, None, f"Groq timeout after {self.api_retry_attempts} attempts"
-                logging.warning(f"   Groq timeout on attempt {attempt + 1}")
                 
             except Exception as e:
+                # THIS IS THE CRITICAL ADDITION: Log the specific error
+                logging.error(f"   Groq error on attempt {attempt + 1}: {str(e)}", exc_info=True)
                 if attempt == self.api_retry_attempts - 1:
                     return False, None, f"Groq error: {str(e)}"
-                logging.warning(f"   Groq error on attempt {attempt + 1}: {e}")
-        
+    
         return False, None, "Groq retry attempts exhausted"
     
     async def _finalize_packing_results_enhanced(self, page_id: str, packing_result: Dict, 
