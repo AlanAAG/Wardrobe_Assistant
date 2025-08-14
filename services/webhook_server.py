@@ -79,11 +79,11 @@ def _get_core_functions():
     functions = {}
     
     try:
-        from core.pipeline_orchestrator import run_enhanced_outfit_pipeline
-        functions['run_enhanced_outfit_pipeline'] = run_enhanced_outfit_pipeline
+        from core.outfit_pipeline_orchestrator import outfit_pipeline_orchestrator
+        functions['outfit_pipeline_orchestrator'] = outfit_pipeline_orchestrator
     except ImportError as e:
-        logging.error(f"Pipeline orchestrator import failed: {e}")
-        functions['run_enhanced_outfit_pipeline'] = None
+        logging.error(f"Outfit pipeline orchestrator import failed: {e}")
+        functions['outfit_pipeline_orchestrator'] = None
     
     try:
         from core.travel_pipeline_orchestrator import travel_pipeline_orchestrator
@@ -139,17 +139,17 @@ def initialize_server():
     try:
         core_functions = _get_core_functions()
         travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
-        outfit_pipeline = core_functions.get('run_enhanced_outfit_pipeline')
+        outfit_orchestrator = core_functions.get('outfit_pipeline_orchestrator')
         
         if travel_orchestrator:
             logging.info("✅ Travel pipeline orchestrator loaded successfully")
         else:
             logging.warning("⚠️  Travel pipeline orchestrator not available")
         
-        if outfit_pipeline:
-            logging.info("✅ Outfit pipeline loaded successfully")
+        if outfit_orchestrator:
+            logging.info("✅ Outfit pipeline orchestrator loaded successfully")
         else:
-            logging.warning("⚠️  Outfit pipeline not available")
+            logging.warning("⚠️  Outfit pipeline orchestrator not available")
             
     except Exception as e:
         logging.error(f"❌ Failed to load core components: {e}")
@@ -293,36 +293,24 @@ def _date_present(props, candidates):
 
 
 def handle_outfit_workflow(page_id):
-    """Handle outfit generation workflow (existing logic)"""
+    """Handle outfit generation workflow"""
     try:
         logging.info(f"👕 ENTERING handle_outfit_workflow for page {page_id}")
         
-        if not validate_outfit_trigger_conditions(page_id):
-            logging.info("Outfit trigger conditions not met")
-            return jsonify({"message": "Outfit trigger conditions not met"}), 200
-        
-        trigger_data = get_outfit_trigger_data(page_id)
-        if not trigger_data:
-            return jsonify({"error": "Failed to extract outfit trigger data"}), 400
-        
-        logging.info(f"Outfit trigger: aesthetic={trigger_data['aesthetics']}, prompt='{trigger_data['prompt']}'")
-
         # Get the pipeline function
         core_functions = _get_core_functions()
-        run_pipeline = core_functions.get('run_enhanced_outfit_pipeline')
+        outfit_orchestrator = core_functions.get('outfit_pipeline_orchestrator')
         
-        if not run_pipeline:
+        if not outfit_orchestrator:
             return jsonify({"error": "Outfit pipeline not available"}), 500
         
-        future = executor.submit(run_async_outfit_pipeline, run_pipeline, trigger_data)
+        future = executor.submit(run_async_outfit_pipeline, outfit_orchestrator)
 
         return jsonify({
             "message": "Outfit generation started",
             "page_id": page_id,
             "workflow": "outfit",
             "status": "processing",
-            "aesthetic": trigger_data['aesthetics'],
-            "prompt_preview": trigger_data['prompt'][:50] + "..." if len(trigger_data['prompt']) > 50 else trigger_data['prompt']
         }), 200
         
     except Exception as e:
@@ -511,7 +499,7 @@ def _read_bags(props):
     return []
 
 
-def run_async_outfit_pipeline(pipeline_func, trigger_data):
+def run_async_outfit_pipeline(outfit_orchestrator):
     """Run outfit pipeline in async context"""
     try:
         import asyncio
@@ -522,11 +510,11 @@ def run_async_outfit_pipeline(pipeline_func, trigger_data):
             # We're in an async context, create a new thread
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, pipeline_func(trigger_data))
+                future = executor.submit(asyncio.run, outfit_orchestrator.run_daily_outfit_pipeline())
                 return future.result()
         except RuntimeError:
             # No event loop running, safe to use asyncio.run
-            return asyncio.run(pipeline_func(trigger_data))
+            return asyncio.run(outfit_orchestrator.run_daily_outfit_pipeline())
     
     except Exception as e:
         logging.error(f"Error in async outfit pipeline: {e}", exc_info=True)

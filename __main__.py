@@ -106,7 +106,7 @@ def start_server():
         logger.info("Initializing Flask server with lazy imports...")
         
         # Import the webhook server with lazy loading
-        from api.webhook_server import app, initialize_server
+        from services.webhook_server import app, initialize_server
         
         # Initialize server components
         logger.info("Running server initialization checks...")

@@ -14,7 +14,7 @@ sys.path.insert(0, str(project_root))
 # This is the key to solving the startup issue.
 try:
     from asgiref.wsgi import WsgiToAsgi
-    from api.webhook_server import app as flask_app
+    from services.webhook_server import app as flask_app
     app = WsgiToAsgi(flask_app)
     
     # Configure logging for production
