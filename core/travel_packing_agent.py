@@ -6,6 +6,7 @@ import asyncio
 import re
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
+from click import prompt
 from dotenv import load_dotenv
 import google.generativeai as genai
 from groq import Groq
@@ -402,164 +403,88 @@ class TravelPackingAgent:
         
         return analysis
     
-    # In core/travel_packing_agent.py
     def _build_comprehensive_service_prompt(self, context: Dict) -> str:
-        """Build the most advanced service prompt for travel packing"""
-    
+        """
+        Builds the definitive, optimized service prompt for Gemini, incorporating
+        structured context, clear instructions, and a few-shot example for reliability.
+        """
         trip = context["trip_overview"]
         destinations = context["destination_analysis"]
         weights = context["weight_constraints"]
         business = context["business_requirements"]
         items = context["available_items"]
     
-        prompt = f"""You are the world's leading AI travel packing consultant, specializing in long-term, multi-destination business relocations. Your expertise combines weight optimization, cultural intelligence, climate adaptation, and business professionalism.
+        prompt = f"""You are an expert AI travel packing consultant. Your task is to create the most weight-efficient and versatile packing list for a long-term business school trip.
 
-    **MISSION CRITICAL BRIEFING:**
-    🎯 **Trip Type**: {trip["trip_type"].replace('_', ' ').title()}
-    🌍 **Destinations**: {trip["destination_count"]} cities across {trip["climate_diversity"]} climate zones
-    ⏱️ **Duration**: {trip["total_duration_months"]} months ({trip["total_duration_days"]} days)
-    🌡️ **Temperature Challenge**: {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C ({trip["temperature_range"]["span"]}°C range)
-    ⚖️ **Weight Budget**: {weights["total_clothes_budget_kg"]}kg TOTAL for clothes (not {weights["total_clothes_budget_kg"] + 15}kg!)
+    **MISSION BRIEFING**
+    * **Trip Type**: {trip["trip_type"].replace('_', ' ').title()}
+    * **Duration**: {trip["total_duration_months"]} months
+    * **Destinations**: {", ".join([d['city'].title() for d in destinations])}
+    * **Climate Challenge**: Cover a temperature range from {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C.
+    * **Weight Limit**: Absolute maximum of {weights["total_clothes_budget_kg"]}kg for all clothing.
+    * **Key Requirements**: The list must support {business["minimum_formal_outfits"]}+ 'Formal' outfits and {business["minimum_business_casual_outfits"]}+ business casual combinations.
 
-    **DESTINATION INTELLIGENCE:**"""
-    
-        for dest in destinations:
-            prompt += f"""
-
-    🏙️ **{dest["city"].upper()}** ({dest["duration_months"]} months):
-    • Climate: {dest["climate_profile"].replace('_', ' ').title()}
-    • Months: {', '.join(dest["months"]).title()}
-    • Cultural Modesty: {dest["cultural_requirements"]["modesty_level"].replace('_', ' ').title()}
-    • Business Formality: {dest["cultural_requirements"]["business_formality"].replace('_', ' ').title()}
-    • Weight Strategy: {dest["weight_priorities"]}
-    • Key Challenges: {', '.join(dest["seasonal_analysis"]["challenges"])}"""
-    
-        prompt += f"""
-
-    **BUSINESS SCHOOL REQUIREMENTS:**
-    📊 **Formal Events**: {business["formal_events_monthly"]}/month → Need {business["minimum_formal_outfits"]} complete outfits with the 'Formal' aesthetic.
-    👔 **Business Casual**: {business["business_casual_weekly"]}/week → Need {business["minimum_business_casual_outfits"]} versatile combinations. Create these by mixing items with 'Formal', 'Minimalist', and appropriate 'Casual' tags (like Polos and Chinos).
-    🎤 **Presentations**: {business["presentations_monthly"]}/month → Require wrinkle-free, confident appearance options.
-    """
-    
-        prompt += f"""
-    **WEIGHT OPTIMIZATION CONSTRAINTS:**
-    ⚖️ **Total Clothes Budget**: {weights["total_clothes_budget_kg"]}kg (THIS IS ABSOLUTE MAXIMUM)
-    📦 **Checked Bag**: {weights["checked_bag_clothes_kg"]}kg for clothes
-    🎒 **Cabin Bag**: {weights["cabin_bag_clothes_kg"]}kg for clothes  
-    🎯 **Target Efficiency**: {weights["target_efficiency"]} complete outfits per kg
-    🚫 **Heavy Item Limit**: Maximum {weights["heavy_item_limit"]} items over 1kg
-
-    **AVAILABLE WARDROBE ANALYSIS:**
+    **AVAILABLE WARDROBE (SELECT ONLY FROM THIS LIST)**
     {self._format_items_with_intelligence(items, context)}
 
-    **ADVANCED SELECTION STRATEGY:**
-    1. **CROSS-DESTINATION OPTIMIZATION**: Prioritize items that excel in multiple destinations
-    2. **SEASONAL BRIDGE ITEMS**: Select pieces that work across season transitions  
-    3. **OUTFIT MULTIPLICATION**: Choose items that create maximum combination possibilities
-    4. **WEIGHT EFFICIENCY**: Favor lighter items unless heavy items provide unique value
-    5. **CULTURAL COMPLIANCE**: Ensure all selections meet most conservative requirements
-    6. **BUSINESS READINESS**: Guarantee professional appearance for all occasions
-    7. **CLIMATE ADAPTATION**: Cover full {trip["temperature_range"]["span"]}°C range with layering
-    8. **LUGGAGE STRATEGY**: Allocate items strategically between checked and cabin bags
+    **CRITICAL OUTPUT INSTRUCTIONS**
+    Your entire response must be ONLY the list of selected items under a single heading. Follow the format in this example exactly.
 
-    **CRITICAL SUCCESS FACTORS:**
-    ✅ Stay within {weights["total_clothes_budget_kg"]}kg clothes budget
-    ✅ Enable {business["minimum_formal_outfits"]}+ 'Formal' outfits
-    ✅ Enable {business["minimum_business_casual_outfits"]}+ business casual combinations  
-    ✅ Cover all climate conditions across both destinations
-    ✅ Respect cultural requirements in Dubai and Gurgaon
-    ✅ Provide strategic packing and organization guidance
-
-    **OUTPUT FORMAT - DELIVER COMPREHENSIVE SOLUTION:**
-
+    **EXAMPLE FORMAT:**
     SELECTED_ITEMS:
-    [For each selected item, provide: Name, Category, Weight, Multi-destination suitability, Business appropriateness, Climate coverage]
+    Black Slim Pants
+    White Stan Smith
+    Playera Nautica Azul
 
-    WEIGHT_ANALYSIS:
-    [Calculate total weight, efficiency ratio, bag allocation]
-
-    OUTFIT_MATRIX:
-    [Show how selected items create complete outfits for each occasion type and destination]
-
-    BAG_ALLOCATION_STRATEGY:
-    [Specify which items go in checked vs cabin bag with reasoning]
-
-    PACKING_ORGANIZATION_GUIDE:
-    [Provide specific folding, rolling, and organization techniques]
-
-    DESTINATION_SPECIFIC_TIPS:
-    [Cultural, climate, and practical advice for each city]
-
-    CONTINGENCY_PLANNING:
-    [Backup strategies for common travel scenarios]
-
-    Remember: This is an 8-month business school relocation, not a vacation. Every gram matters, every outfit must work professionally, and cultural appropriateness is non-negotiable."""
-
+    **YOUR RESPONSE:**
+    SELECTED_ITEMS:
+    """
         return prompt
 
     def _format_items_with_intelligence(self, available_items: Dict, context: Dict) -> str:
-        """Format available items with intelligent analysis"""
+        """
+        Formats available items with a balance of essential detail and conciseness
+        to ensure high-quality AI responses without timeouts.
+        """
         formatted = ""
-        
         for category, items in available_items.items():
             if not items:
                 continue
-                
-            formatted += f"\n**{category.upper()} ({len(items)} items):**\n"
-            
-            for item in items[:8]:  # Limit for prompt size
-                weight = self.weights.get(item['category'], 0.5)
-                aesthetics = ', '.join(item.get('aesthetic', []))
-                weather = ', '.join(item.get('weather', []))
-                
-                formatted += f"• {item['item']} ({weight}kg) - {aesthetics} - {weather}\n"
-            
-            if len(items) > 8:
-                formatted += f"... and {len(items) - 8} more items\n"
         
+            formatted += f"\n**{category.upper()} ({len(items)} items):**\n"
+        
+            # Provides the name and the most important context (aesthetics)
+            item_lines = [f"- {item['item']} (Aesthetics: {', '.join(item.get('aesthetic', ['N/A']))})" for item in items]
+        
+            formatted += "\n".join(item_lines)
+            formatted += "\n"
+    
         return formatted
     
     def _build_groq_service_prompt(self, context: Dict) -> str:
-        """Build Groq-optimized prompt (more concise but comprehensive)"""
-        
+        """Builds the definitive, concise, Groq-optimized service prompt."""
+    
         trip = context["trip_overview"]
         weights = context["weight_constraints"]
         items = context["available_items"]
-        
-        prompt = f"""ADVANCED TRAVEL PACKING OPTIMIZATION
+    
+        prompt = f"""**TASK**: Create an optimized packing list for an 8-month business trip to Dubai and Gurgaon.
+    **CONSTRAINTS**: Max {weights["total_clothes_budget_kg"]}kg weight; cover {trip["temperature_range"]["min"]}°C to {trip["temperature_range"]["max"]}°C; needs 3+ formal and 10+ business casual outfits.
 
-**MISSION**: 8-month business school packing for Dubai + Gurgaon
-**WEIGHT BUDGET**: {weights["total_clothes_budget_kg"]}kg clothes ONLY
-**TEMPERATURE RANGE**: {trip["temperature_range"]["min"]}°-{trip["temperature_range"]["max"]}°C
+    **AVAILABLE ITEMS (SELECT ONLY FROM THIS LIST):**
+    {self._format_items_with_intelligence(items, context)}
 
-**DESTINATIONS**:
-• Dubai (Sep-Dec): Hot/arid, high cultural modesty, business formal events
-• Gurgaon (Jan-May): 6°-40°C range, monsoon prep, business school classes
+    **OUTPUT INSTRUCTIONS**:
+    Your response must ONLY be a list of the exact item names under the heading "SELECTED_ITEMS:", with each item on a new line. Do not add any other text.
 
-**REQUIREMENTS**:
-• 3+ business formal outfits (suits, dress shoes)
-• 10+ business casual combinations  
-• Cultural compliance (Dubai modesty requirements)
-• Climate coverage (extreme heat + cold + monsoon)
-• Weight efficiency (12+ outfits per kg)
+    **EXAMPLE:**
+    SELECTED_ITEMS:
+    Black Slim Pants
+    White Stan Smith
 
-**AVAILABLE ITEMS**:
-{self._format_items_concise(items)}
-
-**SELECTION STRATEGY**:
-1. Multi-destination versatile items first
-2. Lightweight alternatives when possible
-3. Essential heavy items (suits, shoes) included strategically
-4. Maximum outfit combinations with minimum weight
-
-**OUTPUT FORMAT**:
-SELECTED_ITEMS: [List with weights and reasoning]
-TOTAL_WEIGHT: [Calculate precisely]  
-OUTFIT_COVERAGE: [Business formal, casual, climate needs]
-BAG_STRATEGY: [Checked vs cabin allocation]
-TIPS: [Packing and organization advice]"""
-
+    **YOUR RESPONSE:**
+    SELECTED_ITEMS:
+    """
         return prompt
     
     def _format_items_concise(self, available_items: Dict) -> str:
@@ -611,54 +536,47 @@ TIPS: [Packing and organization advice]"""
             return None
     
     def _extract_selected_items(self, response_text: str, available_items: Dict) -> List[Dict]:
-        """Extract selected items from AI response with smart matching"""
+        """
+        Extracts selected items from the AI response using a robust, regex-based approach
+        that is resilient to minor formatting variations.
+        """
         selected_items = []
+    
+        # Create a flattened list and a lookup dictionary of all available items
+        all_items_flat = [item for category_items in available_items.values() for item in category_items]
+        all_items_lookup = {item['item'].lower().strip(): item for item in all_items_flat}
+
+        try:
+            # Find the block of text after the final "SELECTED_ITEMS:" heading
+            items_block = response_text.split("SELECTED_ITEMS:")[-1]
         
-        # Create lookup dictionary for all items
-        all_items_lookup = {}
-        for category, items in available_items.items():
-            for item in items:
-                item_name_lower = item['item'].lower().strip()
-                all_items_lookup[item_name_lower] = item
+            # Use a flexible regex to find all non-empty lines, ignoring bullet points or numbering
+            potential_matches = re.findall(r'^\s*[-•*]?\s*(.+?)\s*$', items_block, re.MULTILINE)
         
-        # Extract items section
-        if "SELECTED_ITEMS:" in response_text:
-            items_section = response_text.split("SELECTED_ITEMS:")[1]
-            # Stop at next major section
-            for section in ["WEIGHT_ANALYSIS:", "OUTFIT_MATRIX:", "BAG_ALLOCATION:", "TOTAL_WEIGHT:"]:
-                if section in items_section:
-                    items_section = items_section.split(section)[0]
-                    break
-            
-            # Parse each line
-            lines = items_section.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and not line.startswith('#') and not line.startswith('**'):
-                    # Try to extract item name (handle various formats)
-                    item_name = self._extract_item_name_from_line(line)
-                    if item_name:
-                        item_name_lower = item_name.lower().strip()
-                        
-                        # Direct match
-                        if item_name_lower in all_items_lookup:
-                            selected_items.append(all_items_lookup[item_name_lower])
-                        else:
-                            # Fuzzy match
-                            fuzzy_match = self._fuzzy_match_item(item_name_lower, all_items_lookup)
-                            if fuzzy_match:
-                                selected_items.append(fuzzy_match)
-        
-        # Remove duplicates
-        seen = set()
+            for match in potential_matches:
+                match_lower = match.lower().strip()
+                # Direct match is fastest and most reliable
+                if match_lower in all_items_lookup:
+                    selected_items.append(all_items_lookup[match_lower])
+                else:
+                    # Use fuzzy matching as a fallback for slight AI variations
+                    fuzzy_match = self._fuzzy_match_item(match_lower, all_items_lookup)
+                    if fuzzy_match:
+                        selected_items.append(fuzzy_match)
+
+        except IndexError:
+            logging.error("Could not find 'SELECTED_ITEMS:' heading in the AI response.")
+            return []
+
+        # Remove any duplicates before returning
+        seen_ids = set()
         unique_items = []
         for item in selected_items:
-            item_id = f"{item['item']}_{item['category']}"
-            if item_id not in seen:
-                seen.add(item_id)
+            if item['id'] not in seen_ids:
+                seen_ids.add(item['id'])
                 unique_items.append(item)
-        
-        logging.info(f"Extracted {len(unique_items)} unique items from AI response")
+    
+        logging.info(f"Extracted {len(unique_items)} unique items from AI response.")
         return unique_items
     
     def _extract_item_name_from_line(self, line: str) -> Optional[str]:

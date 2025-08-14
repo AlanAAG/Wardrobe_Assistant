@@ -1257,6 +1257,7 @@ class TravelPipelineOrchestrator:
     
         return blocks
     
+    # In core/travel_pipeline_orchestrator.py
     def _create_destination_tips_blocks(self, packing_result: Dict, trip_config: Dict) -> List[Dict]:
         """Create destination-specific tips section."""
         blocks = [
@@ -1268,9 +1269,9 @@ class TravelPipelineOrchestrator:
                 }
             }
         ]
-        
+
         trip_tips = packing_result.get("trip_tips", {})
-        
+    
         for destination in trip_config["destinations"]:
             city = destination["city"]
             blocks.append({
@@ -1280,11 +1281,10 @@ class TravelPipelineOrchestrator:
                     "rich_text": [{"type": "text", "text": {"content": f"📍 {city.title()}"}}]
                 }
             })
-            
-            if city in trip_tips:
-                city_tips = trip_tips[city]
-                
-                # Add all tip categories
+        
+            city_tips = trip_tips.get(city, {})
+            # Safely iterate over items, ensuring city_tips is a dictionary
+            if isinstance(city_tips, dict):
                 for tip_category, tips in city_tips.items():
                     if tips and isinstance(tips, list):
                         category_name = tip_category.replace('_', ' ').title()
@@ -1293,30 +1293,9 @@ class TravelPipelineOrchestrator:
                                 "object": "block",
                                 "type": "bulleted_list_item",
                                 "bulleted_list_item": {
-                                    "rich_text": [{"type": "text", "text": {"content": f"{category_name}: {tip}"}}]
+                                    "rich_text": [{"type": "text", "text": {"content": f"{tip}"}}]
                                 }
                             })
-            else:
-                # Fallback tips from configuration
-                city_config = DESTINATIONS_CONFIG.get(city, {})
-                cultural_context = city_config.get("cultural_context", {})
-                
-                blocks.append({
-                    "object": "block",
-                    "type": "bulleted_list_item",
-                    "bulleted_list_item": {
-                        "rich_text": [{"type": "text", "text": {"content": f"Climate: {city_config.get('climate_profile', 'Unknown').replace('_', ' ').title()}"}}]
-                    }
-                })
-                
-                blocks.append({
-                    "object": "block",
-                    "type": "bulleted_list_item",
-                    "bulleted_list_item": {
-                        "rich_text": [{"type": "text", "text": {"content": f"Modesty Level: {cultural_context.get('modesty_level', 'Unknown').replace('_', ' ').title()}"}}]
-                    }
-                })
-        
         return blocks
     
     def _create_generation_info_blocks(self, generation_method: str) -> List[Dict]:

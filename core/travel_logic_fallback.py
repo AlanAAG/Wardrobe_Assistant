@@ -272,11 +272,18 @@ class TravelLogicFallback:
         }
 
     def _generate_basic_trip_tips(self, trip_config: Dict) -> Dict:
-        """Generates generic trip tips."""
-        return {
-            dest["city"]: f"For {dest['city']}, prioritize {DESTINATIONS_CONFIG[dest['city']]['climate_profile']} clothing." 
-            for dest in trip_config["destinations"]
-        }
+        """Generate basic destination tips in the correct structure."""
+        tips = {}
+        for dest in trip_config["destinations"]:
+            city = dest["city"]
+            if city in DESTINATIONS_CONFIG:
+                city_config = DESTINATIONS_CONFIG[city]
+                tips[city] = {
+                    "cultural_tips": [f"Modesty level: {city_config['cultural_context']['modesty_level']}"],
+                    "climate_preparation": [f"Climate: {city_config['climate_profile']}"],
+                    "practical_advice": ["Pack according to local customs and check the weather upon arrival."]
+                }
+        return tips
 
 
 # Global instance
