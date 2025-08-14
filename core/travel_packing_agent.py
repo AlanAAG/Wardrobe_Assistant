@@ -405,28 +405,27 @@ class TravelPackingAgent:
     
     def _build_dynamic_service_prompt(self, context: Dict) -> str:
         """
-        Builds a dynamic, AI-driven prompt that instructs the model on how to analyze
-        raw user input from Notion. This single prompt is efficient enough for both
-        Gemini and Groq.
+        Builds the definitive, AI-driven prompt using structured, dynamic user input
+        from Notion for the highest quality analysis.
         """
-        prompt = f"""You are an expert AI travel packing consultant. Your task is to analyze raw user input from a Notion page, use your own world knowledge to understand the trip's requirements, and create the most weight-efficient and versatile packing list possible.
+        prompt = f"""You are an expert AI travel packing consultant. Your task is to analyze a user's travel plan, use your own world knowledge, and create the most weight-efficient and versatile packing list possible.
 
-    **USER'S RAW INPUT FROM NOTION**
-    * **Destinations & Dates**: "{context['raw_destinations_and_dates']}"
-    * **Purpose & Preferences**: "{context['raw_preferences_and_purpose']}"
-    * **Total Duration**: Approximately {context['dates']['days']} days.
+    **USER'S TRAVEL PLAN FROM NOTION**
+    * **Destinations**: {", ".join(context['destinations'])}
+    * **Overall Trip Dates**: From {context['dates']['start']} to {context['dates']['end']}
+    * **Purpose, Itinerary & Preferences**: "{context['raw_preferences_and_purpose']}"
     * **Weight Limit**: Absolute maximum of {context['weight_constraints']['clothes_allocation']['total_clothes_budget']}kg for all clothing.
 
     **YOUR ANALYSIS PROCESS (Follow these steps):**
-    1.  **Analyze Input**: First, parse the user's raw input to identify the key destinations, dates, and the core purpose of the trip (e.g., business school, vacation, etc.).
-    2.  **Determine Climate & Culture**: For each destination, use your own knowledge to determine the expected climate, weather, and cultural dress norms for the specified dates.
-    3.  **Synthesize a Plan**: Based on your analysis, create a packing strategy that balances the user's preferences with the practical needs of the trip.
+    1.  **Analyze Itinerary**: First, parse the user's "Purpose, Itinerary & Preferences" to understand the timeline for each destination (e.g., "Dubai from September to December").
+    2.  **Determine Climate & Culture**: For each city and its specific timeline, use your knowledge to determine the expected seasons, temperature range (in Celsius), and cultural dress norms.
+    3.  **Synthesize a Plan**: Based on your analysis, create a packing strategy that balances all the user's needs.
 
     **AVAILABLE WARDROBE (SELECT ONLY FROM THIS LIST)**
     {self._format_items_with_intelligence(context["available_items"], context)}
 
     **CRITICAL OUTPUT INSTRUCTIONS**
-    Your entire response must be ONLY a list of the selected items under the heading "SELECTED_ITEMS:". Each item must be on a new line. Do not include any of your reasoning or analysis in the output.
+    Your entire response must be ONLY a list of the selected items under the heading "SELECTED_ITEMS:". Each item must be on a new line.
 
     **YOUR RESPONSE:**
     SELECTED_ITEMS:

@@ -486,16 +486,13 @@ def get_travel_trigger_data(page_id):
 
 
 def _read_destinations(props, page_id):
-    """Reads the raw, combined text from the Destinations property."""
+    """Reads a list of destination city names from the multi-select property."""
     for name in ["Destinations", "Locations", "Cities"]:
         p = props.get(name)
-        if not p:
-            continue
-        if p.get("type") == "multi_select":
-            return ", ".join([tag.get("name", "") for tag in p.get("multi_select", [])])
-        if p.get("type") in ("title", "rich_text"):
-            return "".join(t.get("plain_text", "") for t in p.get(p.get("type"), []))
-    return ""
+        if p and p.get("type") == "multi_select":
+            # Return a simple list of city names
+            return [tag.get("name", "") for tag in p.get("multi_select", [])]
+    return []
 
 def _read_preferences(props):
     """Reads the raw text from the Travel Preferences property."""
