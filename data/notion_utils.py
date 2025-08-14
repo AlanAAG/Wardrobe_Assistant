@@ -39,6 +39,9 @@ class _LazyNotion:
 
 # Exported symbol used across the app:
 notion = _LazyNotion()
+
+# Add the new environment variable for the output database ID
+OUTPUT_DB_ID = os.getenv("NOTION_OUTPUT_DB_ID")
 # ────────────────────────────────────────────────────────────────────
 def query_database(database_id):
     """

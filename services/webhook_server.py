@@ -48,6 +48,7 @@ def check_environment_variables():
         'NOTION_TOKEN': os.getenv('NOTION_TOKEN'),
         'NOTION_PACKING_GUIDE_ID': os.getenv('NOTION_PACKING_GUIDE_ID'),
         'NOTION_WARDROBE_DB_ID': os.getenv('NOTION_WARDROBE_DB_ID'),
+        'NOTION_OUTPUT_DB_ID': os.getenv('NOTION_OUTPUT_DB_ID'),
         'GEMINI_AI_API_KEY': os.getenv('GEMINI_AI_API_KEY'),
         'GROQ_AI_API_KEY': os.getenv('GROQ_AI_API_KEY')
     }
