@@ -67,6 +67,8 @@ def check_environment():
             'NOTION_TOKEN',
             'NOTION_PACKING_GUIDE_ID',
             'NOTION_WARDROBE_DB_ID'
+            'NOTION_OUTFIT_LOG_DB_ID'
+
         ]
         
         optional_vars = [
