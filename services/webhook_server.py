@@ -98,8 +98,8 @@ def _get_core_functions():
 def _get_monitoring():
     """Lazy load monitoring components to avoid circular imports."""
     try:
-        from monitoring.system_monitor import system_monitor
-        return system_monitor
+        from monitoring import get_system_monitor
+        return get_system_monitor()
     except ImportError as e:
         logging.warning(f"System monitor not available: {e}")
         return None

@@ -14,8 +14,8 @@ def get_system_monitor():
     global _system_monitor
     if _system_monitor is None:
         try:
-            from .system_monitor import system_monitor
-            _system_monitor = system_monitor
+            from .system_monitor import enhanced_system_monitor
+            _system_monitor = enhanced_system_monitor
             logging.info("✅ System monitor loaded successfully")
         except ImportError as e:
             logging.warning(f"System monitor not available (ImportError): {e}")
