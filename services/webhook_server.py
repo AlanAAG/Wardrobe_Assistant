@@ -200,6 +200,8 @@ if FLASK_AVAILABLE:
             return handle_outfit_workflow(page_id)
         elif workflow_type == "travel":
             return handle_travel_workflow(page_id)
+        elif workflow_type == "laundry_day":
+            return handle_laundry_day_workflow(page_id)
         else:
             logging.info(f"No workflow triggered for page {page_id}")
             return jsonify({"message": "No workflow conditions met"}), 200
@@ -207,55 +209,48 @@ if FLASK_AVAILABLE:
 def determine_workflow_type(page_id):
     """
     Decide which workflow to run for the given Notion page.
-
-    Travel (NEW default): run when ALL are true
-      - 'Destinations'   not empty
-      - 'Travel Preferences' not empty
-      - 'Travel Dates'   has start (and ideally end)
-
-    The old manual travel checkbox still works as an override:
-      - 'Generate' / 'Generate Travel Packing' / 'Generate Packing' / 'Travel Generate' == True
-
-    Outfit: run when BOTH are true:
-      - 'Desired Aesthetic' not empty
-      - 'Prompt' rich_text not empty
     """
     notion = _get_notion_client()
     if not notion:
         logging.error("Notion client not available for workflow detection")
         return None
-    
+
     try:
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
+        parent_db_id = page.get("parent", {}).get("database_id", "").replace("-", "")
 
-        # manual travel override (still supported)
+        # Laundry Day workflow
+        dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID", "").replace("-", "")
+        if parent_db_id and parent_db_id == dirty_clothes_db_id:
+            ready_for_laundry_prop = props.get("Ready for Laundry", {})
+            if ready_for_laundry_prop.get("checkbox") is False:
+                logging.info("🧺 Laundry day trigger detected.")
+                return "laundry_day"
+
+        # Manual travel override
         for name in ["Generate", "Generate Travel Packing", "Generate Packing", "Travel Generate"]:
-            if name in props and props[name].get("type") == "checkbox":
-                if props[name].get("checkbox", False):
-                    logging.info("🧳 Travel override checkbox detected.")
-                    return "travel"
+            if name in props and props[name].get("type") == "checkbox" and props[name].get("checkbox"):
+                logging.info("🧳 Travel override checkbox detected.")
+                return "travel"
 
-        # travel auto-trigger (per your spec)
+        # Travel auto-trigger
         dest_ok = _prop_nonempty(props, ["Destinations", "Locations", "Cities"])
         prefs_ok = _prop_nonempty(props, ["Travel Preferences", "Trip Preferences", "Preferences"])
         dates_ok = _date_present(props, ["Travel Dates", "Trip Dates", "Dates"])
-
-        logging.info(f"🔍 Travel triggers - destinations:{dest_ok} prefs:{prefs_ok} dates:{dates_ok}")
         if dest_ok and prefs_ok and dates_ok:
+            logging.info("✈️ Travel auto-trigger detected.")
             return "travel"
 
-        # outfit trigger (unchanged)
+        # Outfit trigger
         aesthetic_prop = props.get("Desired Aesthetic", {})
         prompt_prop = props.get("Prompt", {})
-
         has_aesthetic = len(aesthetic_prop.get("multi_select", [])) > 0
         has_prompt = len(prompt_prop.get("rich_text", [])) > 0 and any(
             t.get("plain_text", "").strip() for t in prompt_prop.get("rich_text", [])
         )
-
-        logging.info(f"🔍 Outfit triggers - aesthetic:{has_aesthetic} prompt:{has_prompt}")
         if has_aesthetic and has_prompt:
+            logging.info("👕 Outfit trigger detected.")
             return "outfit"
 
         return None
@@ -373,6 +368,48 @@ def handle_travel_workflow(page_id):
             "details": str(e),
             "page_id": page_id
         }), 500
+
+
+def handle_laundry_day_workflow(page_id):
+    """
+    Handles the laundry day workflow.
+    """
+    try:
+        logging.info(f"🧺 ENTERING handle_laundry_day_workflow for page {page_id}")
+        from data.notion_utils import update_items_washed_status, archive_page
+
+        notion = _get_notion_client()
+        if not notion:
+            return jsonify({"error": "Notion client not available"}), 500
+
+        # Retrieve the page from the "Dirty Clothes" database
+        page = notion.pages.retrieve(page_id=page_id)
+        props = page.get("properties", {})
+
+        # Get the related clothing item
+        clothing_item_relation = props.get("Clothing Item", {}).get("relation", [])
+        if not clothing_item_relation:
+            logging.error(f"No clothing item relation found for page {page_id}")
+            return jsonify({"error": "No clothing item relation found"}), 400
+
+        clothing_item_id = clothing_item_relation[0]["id"]
+
+        # Update the washed status and archive the page
+        update_items_washed_status(clothing_item_id, "Done")
+        archive_page(page_id)
+
+        logging.info(f"✅ Laundry day workflow completed for page {page_id}")
+        return jsonify({
+            "message": "Laundry day workflow completed",
+            "page_id": page_id,
+            "workflow": "laundry_day",
+            "status": "completed",
+        }), 200
+
+    except Exception as e:
+        logging.error(f"❌ Laundry day workflow error: {e}", exc_info=True)
+        return jsonify({"error": "Laundry day workflow failed"}), 500
+
 
 def validate_outfit_trigger_conditions(page_id):
     """Validate outfit generation trigger conditions (existing logic)"""
