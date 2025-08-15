@@ -10,7 +10,7 @@ from data.notion_utils import (
     post_outfit_to_notion_page,
     clear_page_content,
     clear_trigger_fields,
-    OUTPUT_DB_ID
+    get_output_db_id
 )
 
 class OutfitPipelineOrchestrator:
@@ -38,7 +38,7 @@ class OutfitPipelineOrchestrator:
             weather_tag = forecast["weather_tag"]
 
             # 3. Get user preferences
-            selected_aesthetics = get_selected_aesthetic_from_output_db(OUTPUT_DB_ID)
+            selected_aesthetics = get_selected_aesthetic_from_output_db(get_output_db_id())
             desired_aesthetic = selected_aesthetics[0] if selected_aesthetics else "Minimalist"
 
             # 4. Generate outfit
@@ -50,7 +50,7 @@ class OutfitPipelineOrchestrator:
                 return result
 
             # 5. Post outfit to Notion
-            output_page_id = get_output_page_id(OUTPUT_DB_ID)
+            output_page_id = get_output_page_id(get_output_db_id())
             if not output_page_id:
                 return {"success": False, "error": "Could not find the output page in Notion."}
 

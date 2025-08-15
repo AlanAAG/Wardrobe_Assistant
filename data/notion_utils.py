@@ -40,8 +40,14 @@ class _LazyNotion:
 # Exported symbol used across the app:
 notion = _LazyNotion()
 
-# Add the new environment variable for the output database ID
-OUTPUT_DB_ID = os.getenv("NOTION_OUTPUT_DB_ID")
+def get_output_db_id():
+    """
+    Get the Notion Output DB ID from environment variables.
+    This function is used to delay the reading of the env var until it's needed,
+    avoiding import-time issues in some environments.
+    """
+    return os.getenv("NOTION_OUTFIT_LOG_DB_ID")
+
 # ────────────────────────────────────────────────────────────────────
 def query_database(database_id):
     """
@@ -300,45 +306,6 @@ def clear_page_content(page_id):
     except Exception as e:
         logging.error(f"Failed to clear content from page {page_id}: {e}")
 
-def get_outfit_db_pages(output_db_id):
-    """
-    Get all pages from the outfit database with their properties.
-    Returns a list of page data including prompts and aesthetics.
-    """
-    try:
-        results = query_database(output_db_id)
-        pages = []
-
-        for result in results:
-            props = result.get("properties", {})
-
-            # Get Desired Aesthetic
-            aesthetic_prop = props.get("Desired Aesthetic", {})
-            multi_select = aesthetic_prop.get("multi_select", [])
-            aesthetics = [tag.get("name") for tag in multi_select]
-
-            # Get Prompt text
-            prompt_prop = props.get("Prompt", {})
-            rich_text = prompt_prop.get("rich_text", [])
-            prompt_text = "".join([t.get("plain_text", "") for t in rich_text]) if rich_text else ""
-
-            # Get Outfit Date
-            date_prop = props.get("Outfit Date", {})
-            outfit_date = date_prop.get("date", {}).get("start") if date_prop.get("date") else None
-
-            pages.append({
-                "id": result.get("id"),
-                "aesthetics": aesthetics,
-                "prompt": prompt_text,
-                "date": outfit_date,
-                "last_edited_time": result.get("last_edited_time")
-            })
-
-        return pages
-    except Exception as e:
-        logging.error(f"Failed to get outfit DB pages: {e}")
-        return []
-    
 def get_outfit_db_pages(output_db_id):
     """
     Get all pages from the outfit database with their properties.
