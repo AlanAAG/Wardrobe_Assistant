@@ -41,7 +41,7 @@ class _LazyNotion:
 notion = _LazyNotion()
 
 # Add the new environment variable for the output database ID
-OUTPUT_DB_ID = os.getenv("NOTION_OUTPUT_DB_ID")
+OUTPUT_DB_ID = os.getenv("NOTION_OUtFIT_LOG_DB_ID")
 # ────────────────────────────────────────────────────────────────────
 def query_database(database_id):
     """
