@@ -4,6 +4,7 @@ import logging
 import asyncio
 from typing import List, Dict, Optional, Tuple
 from dotenv import load_dotenv
+from core.outfit_logic import UPPER_BODY, LOWER_BODY_HOT, FOOTWEAR
 import google.generativeai as genai
 from groq import Groq
 
@@ -427,13 +428,10 @@ REASONING: [Brief explanation]"""
         categories = {item['category'] for item in selected_items}
         
         # Required categories
-        required_tops = {'Polo', 'T-shirt', 'Sport T-shirt', 'Shirt'}
-        required_bottoms = {'Cargo Pants', 'Chinos', 'Jeans', 'Joggers', 'Pants', 'Shorts'}
-        required_footwear = {'Shoes', 'Sneakers'}
-        
-        has_top = bool(categories.intersection(required_tops))
-        has_bottom = bool(categories.intersection(required_bottoms))
-        has_footwear = bool(categories.intersection(required_footwear))
+        # Required categories are now based on the centralized definitions
+        has_top = bool(categories.intersection(UPPER_BODY))
+        has_bottom = bool(categories.intersection(LOWER_BODY_HOT))
+        has_footwear = bool(categories.intersection(FOOTWEAR))
         
         if not (has_top and has_bottom and has_footwear):
             logging.warning(f"Incomplete outfit: top={has_top}, bottom={has_bottom}, footwear={has_footwear}")

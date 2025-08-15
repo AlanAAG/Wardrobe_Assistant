@@ -1,8 +1,15 @@
 import asyncio
 import logging
+import json
 from typing import Dict, List, Tuple, Optional
 
-from core.outfit_logic import build_outfit
+from core.outfit_logic import (
+    build_outfit,
+    UPPER_BODY,
+    LOWER_BODY_HOT,
+    OUTERWEAR,
+    FOOTWEAR,
+)
 from core.llm_agents import outfit_llm_agents
 
 class OutfitPlannerAgent:
@@ -70,13 +77,23 @@ class OutfitPlannerAgent:
             return "Could not generate example outfits."
 
     def _categorize_items(self, items: List[Dict]) -> Dict:
-        """Categorizes a list of items by their 'category' property."""
-        categorized = {}
+        """Categorizes items into 'tops', 'bottoms', 'outerwear', and 'footwear'."""
+        categorized = {
+            "tops": [],
+            "bottoms": [],
+            "outerwear": [],
+            "footwear": [],
+        }
         for item in items:
-            category = item.get('category', 'Unknown')
-            if category not in categorized:
-                categorized[category] = []
-            categorized[category].append(item)
+            category = item.get("category")
+            if category in UPPER_BODY:
+                categorized["tops"].append(item)
+            elif category in LOWER_BODY_HOT:  # Using HOT as it includes all lower body items
+                categorized["bottoms"].append(item)
+            elif category in OUTERWEAR:
+                categorized["outerwear"].append(item)
+            elif category in FOOTWEAR:
+                categorized["footwear"].append(item)
         return categorized
 
 outfit_planner_agent = OutfitPlannerAgent()
