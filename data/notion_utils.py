@@ -230,10 +230,27 @@ def post_outfit_to_notion_page(page_id, outfit_items):
                         }
                     }
                 ],
-                "checked": True # Default to checked, user can uncheck if they didn't wear it
+                "checked": False
             }
         }
         children_to_append.append(block)
+
+    # Add the final "Send to Hamper" to-do block
+    children_to_append.append({
+        "object": "block",
+        "type": "to_do",
+        "to_do": {
+            "rich_text": [
+                {
+                    "type": "text",
+                    "text": {
+                        "content": "Send to Hamper 🧺"
+                    }
+                }
+            ],
+            "checked": False
+        }
+    })
 
     try:
         notion.blocks.children.append(block_id=page_id, children=children_to_append)
@@ -401,7 +418,7 @@ def clear_trigger_fields(page_id):
         logging.error(f"Failed to clear trigger fields for page {page_id}: {e}")
         raise
 
-def update_items_washed_status(page_id: str, status: str = "Done"):
+def update_wardrobe_item_status(wardrobe_item_id: str, status: str):
     """
     Updates the 'Washed' status of a given clothing item page.
     """
@@ -413,22 +430,22 @@ def update_items_washed_status(page_id: str, status: str = "Done"):
                 }
             }
         }
-        notion.pages.update(page_id=page_id, properties=properties)
-        logging.info(f"Updated 'Washed' status to '{status}' for page {page_id}")
+        notion.pages.update(page_id=wardrobe_item_id, properties=properties)
+        logging.info(f"Updated 'Washed' status to '{status}' for page {wardrobe_item_id}")
     except Exception as e:
-        logging.error(f"Failed to update 'Washed' status for page {page_id}: {e}")
+        logging.error(f"Failed to update 'Washed' status for page {wardrobe_item_id}: {e}")
         raise
 
 
-def archive_page(page_id: str):
+def delete_page(page_id: str):
     """
-    Archives a given Notion page.
+    Deletes (archives) a given Notion page.
     """
     try:
         notion.pages.update(page_id=page_id, archived=True)
-        logging.info(f"Successfully archived page {page_id}")
+        logging.info(f"Successfully deleted (archived) page {page_id}")
     except Exception as e:
-        logging.error(f"Failed to archive page {page_id}: {e}")
+        logging.error(f"Failed to delete (archive) page {page_id}: {e}")
         raise
 
 def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfit_log_id: str):
@@ -475,9 +492,10 @@ def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfi
         logging.error(f"Failed to create page in Dirty Clothes database: {e}")
         raise
 
-def get_checked_todo_items_from_page(page_id: str) -> list:
+def get_checked_items_from_page(page_id: str) -> list:
     """
-    Retrieves all checked 'to_do' blocks from a page that mention a clothing item.
+    Retrieves all checked 'to_do' blocks from a page that mention a clothing item,
+    ignoring the "Send to Hamper" block.
     Returns a list of dicts, each containing the clothing item's page ID and name.
     """
     try:
@@ -486,13 +504,63 @@ def get_checked_todo_items_from_page(page_id: str) -> list:
         for block in blocks:
             if block.get("type") == "to_do" and block.get("to_do", {}).get("checked") is True:
                 rich_text = block.get("to_do", {}).get("rich_text", [])
+                # Ignore the "Send to Hamper" block
+                if any("Send to Hamper" in t.get("text", {}).get("content", "") for t in rich_text):
+                    continue
                 for text_item in rich_text:
                     if text_item.get("type") == "mention" and text_item.get("mention", {}).get("type") == "page":
                         clothing_item_id = text_item["mention"]["page"]["id"]
                         item_name = text_item["plain_text"]
                         checked_items.append({"id": clothing_item_id, "name": item_name})
-        logging.info(f"Found {len(checked_items)} checked to-do items on page {page_id}")
+        logging.info(f"Found {len(checked_items)} checked items on page {page_id}")
         return checked_items
     except Exception as e:
-        logging.error(f"Failed to get checked to-do items from page {page_id}: {e}")
+        logging.error(f"Failed to get checked items from page {page_id}: {e}")
         return []
+
+def add_items_to_dirty_clothes_db(items: list, outfit_log_id: str):
+    """
+    Adds a list of clothing items to the 'Dirty Clothes' database.
+    items: A list of dicts, each with "id" and "name" of the item.
+    """
+    for item in items:
+        try:
+            create_page_in_dirty_clothes_db(
+                item_name=item["name"],
+                clothing_item_id=item["id"],
+                outfit_log_id=outfit_log_id
+            )
+        except Exception as e:
+            logging.error(f"Failed to add item {item['id']} to dirty clothes DB: {e}")
+
+def uncheck_hamper_trigger(page_id: str):
+    """
+    Unchecks the 'Send to Hamper' checkbox on a given page.
+    """
+    try:
+        properties = {
+            "Send to Hamper": {
+                "checkbox": False
+            }
+        }
+        notion.pages.update(page_id=page_id, properties=properties)
+        logging.info(f"Unchecked 'Send to Hamper' for page {page_id}")
+    except Exception as e:
+        logging.error(f"Failed to uncheck 'Send to Hamper' for page {page_id}: {e}")
+
+def get_related_wardrobe_item_id(dirty_item_page_id: str) -> str:
+    """
+    Reads the relation property from a page in the 'Dirty Clothes' database
+    and returns the ID of the main wardrobe item.
+    """
+    try:
+        page = notion.pages.retrieve(page_id=dirty_item_page_id)
+        props = page.get("properties", {})
+        clothing_item_relation = props.get("Clothing Item", {}).get("relation", [])
+        if not clothing_item_relation:
+            logging.error(f"No clothing item relation found for page {dirty_item_page_id}")
+            return None
+        return clothing_item_relation[0]["id"]
+    except Exception as e:
+        logging.error(f"Failed to get related wardrobe item ID from page {dirty_item_page_id}: {e}")
+        return None

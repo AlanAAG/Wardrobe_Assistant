@@ -92,6 +92,20 @@ def _get_core_functions():
     except ImportError as e:
         logging.error(f"Travel pipeline orchestrator import failed: {e}")
         functions['travel_pipeline_orchestrator'] = None
+
+    try:
+        from core.hamper_pipeline_orchestrator import hamper_pipeline_orchestrator
+        functions['hamper_pipeline_orchestrator'] = hamper_pipeline_orchestrator
+    except ImportError as e:
+        logging.error(f"Hamper pipeline orchestrator import failed: {e}")
+        functions['hamper_pipeline_orchestrator'] = None
+
+    try:
+        from core.laundry_day_pipeline_orchestrator import laundry_day_pipeline_orchestrator
+        functions['laundry_day_pipeline_orchestrator'] = laundry_day_pipeline_orchestrator
+    except ImportError as e:
+        logging.error(f"Laundry day pipeline orchestrator import failed: {e}")
+        functions['laundry_day_pipeline_orchestrator'] = None
     
     return functions
 
@@ -202,6 +216,8 @@ if FLASK_AVAILABLE:
             return handle_travel_workflow(page_id)
         elif workflow_type == "laundry_day":
             return handle_laundry_day_workflow(page_id)
+        elif workflow_type == "hamper":
+            return handle_hamper_workflow(page_id)
         else:
             logging.info(f"No workflow triggered for page {page_id}")
             return jsonify({"message": "No workflow conditions met"}), 200
@@ -223,8 +239,8 @@ def determine_workflow_type(page_id):
         # Laundry Day workflow
         dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID", "").replace("-", "")
         if parent_db_id and parent_db_id == dirty_clothes_db_id:
-            ready_for_laundry_prop = props.get("Ready for Laundry", {})
-            if ready_for_laundry_prop.get("checkbox") is False:
+            washed_prop = props.get("Washed", {})
+            if washed_prop.get("type") == "checkbox" and washed_prop.get("checkbox"):
                 logging.info("🧺 Laundry day trigger detected.")
                 return "laundry_day"
 
@@ -252,6 +268,12 @@ def determine_workflow_type(page_id):
         if has_aesthetic and has_prompt:
             logging.info("👕 Outfit trigger detected.")
             return "outfit"
+
+        # Hamper trigger
+        hamper_prop = props.get("Send to Hamper", {})
+        if hamper_prop.get("type") == "checkbox" and hamper_prop.get("checkbox"):
+            logging.info("🧺 Hamper trigger detected.")
+            return "hamper"
 
         return None
     except Exception as e:
@@ -376,39 +398,47 @@ def handle_laundry_day_workflow(page_id):
     """
     try:
         logging.info(f"🧺 ENTERING handle_laundry_day_workflow for page {page_id}")
-        from data.notion_utils import update_items_washed_status, archive_page
 
-        notion = _get_notion_client()
-        if not notion:
-            return jsonify({"error": "Notion client not available"}), 500
+        core_functions = _get_core_functions()
+        laundry_day_orchestrator = core_functions.get('laundry_day_pipeline_orchestrator')
 
-        # Retrieve the page from the "Dirty Clothes" database
-        page = notion.pages.retrieve(page_id=page_id)
-        props = page.get("properties", {})
+        if not laundry_day_orchestrator:
+            return jsonify({"error": "Laundry day pipeline not available"}), 500
 
-        # Get the related clothing item
-        clothing_item_relation = props.get("Clothing Item", {}).get("relation", [])
-        if not clothing_item_relation:
-            logging.error(f"No clothing item relation found for page {page_id}")
-            return jsonify({"error": "No clothing item relation found"}), 400
+        future = executor.submit(run_async_laundry_day_pipeline, laundry_day_orchestrator, page_id)
 
-        clothing_item_id = clothing_item_relation[0]["id"]
-
-        # Update the washed status and archive the page
-        update_items_washed_status(clothing_item_id, "Done")
-        archive_page(page_id)
-
-        logging.info(f"✅ Laundry day workflow completed for page {page_id}")
         return jsonify({
-            "message": "Laundry day workflow completed",
+            "message": "Laundry day workflow started",
             "page_id": page_id,
             "workflow": "laundry_day",
-            "status": "completed",
+            "status": "processing",
         }), 200
 
     except Exception as e:
         logging.error(f"❌ Laundry day workflow error: {e}", exc_info=True)
         return jsonify({"error": "Laundry day workflow failed"}), 500
+
+
+def run_async_laundry_day_pipeline(laundry_day_orchestrator, page_id):
+    """Run laundry day pipeline in async context"""
+    try:
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    laundry_day_orchestrator.run_laundry_day_pipeline(page_id)
+                )
+                return future.result()
+        except RuntimeError:
+            return asyncio.run(laundry_day_orchestrator.run_laundry_day_pipeline(page_id))
+
+    except Exception as e:
+        logging.error(f"Error in async laundry day pipeline: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 def validate_outfit_trigger_conditions(page_id):
@@ -581,6 +611,53 @@ def run_async_travel_pipeline(travel_orchestrator, trigger_data):
     
     except Exception as e:
         logging.error(f"Error in async travel pipeline: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+def handle_hamper_workflow(page_id):
+    """Handle the 'Send to Hamper' workflow."""
+    try:
+        logging.info(f"🧺 ENTERING handle_hamper_workflow for page {page_id}")
+
+        core_functions = _get_core_functions()
+        hamper_orchestrator = core_functions.get('hamper_pipeline_orchestrator')
+
+        if not hamper_orchestrator:
+            return jsonify({"error": "Hamper pipeline not available"}), 500
+
+        future = executor.submit(run_async_hamper_pipeline, hamper_orchestrator, page_id)
+
+        return jsonify({
+            "message": "'Send to Hamper' workflow started",
+            "page_id": page_id,
+            "workflow": "hamper",
+            "status": "processing",
+        }), 200
+
+    except Exception as e:
+        logging.error(f"❌ Hamper workflow error: {e}", exc_info=True)
+        return jsonify({"error": "Hamper workflow failed"}), 500
+
+
+def run_async_hamper_pipeline(hamper_orchestrator, page_id):
+    """Run hamper pipeline in async context"""
+    try:
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    hamper_orchestrator.run_hamper_pipeline(page_id)
+                )
+                return future.result()
+        except RuntimeError:
+            return asyncio.run(hamper_orchestrator.run_hamper_pipeline(page_id))
+
+    except Exception as e:
+        logging.error(f"Error in async hamper pipeline: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 

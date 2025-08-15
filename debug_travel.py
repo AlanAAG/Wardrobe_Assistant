@@ -65,7 +65,7 @@ async def test_notion_connection():
         packing_guide_id = os.getenv('NOTION_PACKING_GUIDE_ID')
         page = await asyncio.to_thread(notion.pages.retrieve, page_id=packing_guide_id)
         print("   ✅ Notion connection successful")
-        title_property = page.get('properties', {}).get('AI Generated Luggage Explanation', {})
+        title_property = page.get('properties', {}).get('Name', {})
         page_title = title_property.get('title', [{}])[0].get('plain_text', 'N/A')
         print(f"   📋 Page Title: '{page_title}'")
         return True
@@ -73,14 +73,14 @@ async def test_notion_connection():
         print(f"   ❌ Notion connection failed: {e}")
         return False
 
-async def test_data_extraction():
+def test_data_extraction():
     """Tests the new data extraction logic in the webhook server."""
     print("\n🔧 Testing Raw Data Extraction...")
     try:
         from services.webhook_server import get_travel_trigger_data
         page_id = os.getenv('NOTION_PACKING_GUIDE_ID')
         
-        trigger_data = await asyncio.to_thread(get_travel_trigger_data, page_id)
+        trigger_data = get_travel_trigger_data(page_id)
         
         if not trigger_data:
             print("   ❌ Failed to extract any trigger data from Notion.")
@@ -105,7 +105,7 @@ async def run_full_pipeline_test():
 
         page_id = os.getenv('NOTION_PACKING_GUIDE_ID')
         print(f"   📡 Fetching real-time trigger data from Notion page: {page_id}")
-        trigger_data = await asyncio.to_thread(get_travel_trigger_data, page_id)
+        trigger_data = get_travel_trigger_data(page_id)
         
         if not trigger_data or not trigger_data.get("destinations"):
              print("   ❌ Could not fetch valid trigger data from Notion. Please check your page properties.")
@@ -142,7 +142,7 @@ async def main():
     results['environment'] = check_environment()
     results['imports'] = test_imports()
     results['notion_connection'] = await test_notion_connection()
-    results['data_extraction'] = await test_data_extraction()
+    results['data_extraction'] = test_data_extraction()
     
     all_basic_passed = all(results.values())
     
