@@ -230,10 +230,27 @@ def post_outfit_to_notion_page(page_id, outfit_items):
                         }
                     }
                 ],
-                "checked": True # Default to checked, user can uncheck if they didn't wear it
+                "checked": False
             }
         }
         children_to_append.append(block)
+
+    # Add the final "Send to Hamper" to-do block
+    children_to_append.append({
+        "object": "block",
+        "type": "to_do",
+        "to_do": {
+            "rich_text": [
+                {
+                    "type": "text",
+                    "text": {
+                        "content": "Send to Hamper 🧺"
+                    }
+                }
+            ],
+            "checked": False
+        }
+    })
 
     try:
         notion.blocks.children.append(block_id=page_id, children=children_to_append)
