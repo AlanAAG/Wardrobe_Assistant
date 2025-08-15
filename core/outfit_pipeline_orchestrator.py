@@ -13,7 +13,7 @@ from data.notion_utils import (
     OUTPUT_DB_ID,
     get_checked_items_from_page,
     create_page_in_dirty_clothes_db,
-    update_items_washed_status
+    update_wardrobe_item_status
 )
 
 
@@ -40,7 +40,7 @@ class OutfitPipelineOrchestrator:
                     outfit_log_id=page_id
                 )
                 # Mark as "Not Done" in main wardrobe
-                update_items_washed_status(item["id"], "Not Done")
+                update_wardrobe_item_status(item["id"], "Not Done")
             logging.info(f"Added {len(checked_items)} items to dirty clothes database.")
         except Exception as e:
             logging.error(f"Error adding items to dirty clothes database: {e}", exc_info=True)
