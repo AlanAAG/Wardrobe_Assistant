@@ -235,6 +235,7 @@ def determine_workflow_type(page_id):
         page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
         parent_db_id = page.get("parent", {}).get("database_id", "").replace("-", "")
+        logging.info(f"Checking parent DB ID: {parent_db_id}")
 
         # Laundry Day workflow
         dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID", "").replace("-", "")
@@ -270,8 +271,10 @@ def determine_workflow_type(page_id):
             return "outfit"
 
         # Hamper trigger
-        outfit_log_db_id = os.getenv("NOTION_OUTFIT_LOG_DB_ID", "").replace("-", "")
-        hamper_prop = props.get("Send to Hamper", {})
+          outfit_log_db_id = os.getenv("NOTION_OUTFIT_LOG_DB_ID", "").replace("-", "")
+          logging.info(f"Checking against Outfit Log DB ID: {outfit_log_db_id}")
+          hamper_prop = props.get("Send to Hamper", {})
+          
         if parent_db_id and parent_db_id == outfit_log_db_id:
             if hamper_prop.get("type") == "checkbox" and hamper_prop.get("checkbox"):
                 logging.info("🧺 Hamper trigger detected.")
