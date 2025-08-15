@@ -99,6 +99,13 @@ def _get_core_functions():
     except ImportError as e:
         logging.error(f"Hamper pipeline orchestrator import failed: {e}")
         functions['hamper_pipeline_orchestrator'] = None
+
+    try:
+        from core.laundry_day_pipeline_orchestrator import laundry_day_pipeline_orchestrator
+        functions['laundry_day_pipeline_orchestrator'] = laundry_day_pipeline_orchestrator
+    except ImportError as e:
+        logging.error(f"Laundry day pipeline orchestrator import failed: {e}")
+        functions['laundry_day_pipeline_orchestrator'] = None
     
     return functions
 
@@ -232,8 +239,8 @@ def determine_workflow_type(page_id):
         # Laundry Day workflow
         dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID", "").replace("-", "")
         if parent_db_id and parent_db_id == dirty_clothes_db_id:
-            ready_for_laundry_prop = props.get("Ready for Laundry", {})
-            if ready_for_laundry_prop.get("checkbox") is False:
+            washed_prop = props.get("Washed", {})
+            if washed_prop.get("type") == "checkbox" and washed_prop.get("checkbox"):
                 logging.info("🧺 Laundry day trigger detected.")
                 return "laundry_day"
 
@@ -391,39 +398,47 @@ def handle_laundry_day_workflow(page_id):
     """
     try:
         logging.info(f"🧺 ENTERING handle_laundry_day_workflow for page {page_id}")
-        from data.notion_utils import update_items_washed_status, archive_page
 
-        notion = _get_notion_client()
-        if not notion:
-            return jsonify({"error": "Notion client not available"}), 500
+        core_functions = _get_core_functions()
+        laundry_day_orchestrator = core_functions.get('laundry_day_pipeline_orchestrator')
 
-        # Retrieve the page from the "Dirty Clothes" database
-        page = notion.pages.retrieve(page_id=page_id)
-        props = page.get("properties", {})
+        if not laundry_day_orchestrator:
+            return jsonify({"error": "Laundry day pipeline not available"}), 500
 
-        # Get the related clothing item
-        clothing_item_relation = props.get("Clothing Item", {}).get("relation", [])
-        if not clothing_item_relation:
-            logging.error(f"No clothing item relation found for page {page_id}")
-            return jsonify({"error": "No clothing item relation found"}), 400
+        future = executor.submit(run_async_laundry_day_pipeline, laundry_day_orchestrator, page_id)
 
-        clothing_item_id = clothing_item_relation[0]["id"]
-
-        # Update the washed status and archive the page
-        update_items_washed_status(clothing_item_id, "Done")
-        archive_page(page_id)
-
-        logging.info(f"✅ Laundry day workflow completed for page {page_id}")
         return jsonify({
-            "message": "Laundry day workflow completed",
+            "message": "Laundry day workflow started",
             "page_id": page_id,
             "workflow": "laundry_day",
-            "status": "completed",
+            "status": "processing",
         }), 200
 
     except Exception as e:
         logging.error(f"❌ Laundry day workflow error: {e}", exc_info=True)
         return jsonify({"error": "Laundry day workflow failed"}), 500
+
+
+def run_async_laundry_day_pipeline(laundry_day_orchestrator, page_id):
+    """Run laundry day pipeline in async context"""
+    try:
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    laundry_day_orchestrator.run_laundry_day_pipeline(page_id)
+                )
+                return future.result()
+        except RuntimeError:
+            return asyncio.run(laundry_day_orchestrator.run_laundry_day_pipeline(page_id))
+
+    except Exception as e:
+        logging.error(f"Error in async laundry day pipeline: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 def validate_outfit_trigger_conditions(page_id):

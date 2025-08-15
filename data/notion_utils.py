@@ -418,7 +418,7 @@ def clear_trigger_fields(page_id):
         logging.error(f"Failed to clear trigger fields for page {page_id}: {e}")
         raise
 
-def update_items_washed_status(page_id: str, status: str = "Done"):
+def update_wardrobe_item_status(wardrobe_item_id: str, status: str):
     """
     Updates the 'Washed' status of a given clothing item page.
     """
@@ -430,22 +430,22 @@ def update_items_washed_status(page_id: str, status: str = "Done"):
                 }
             }
         }
-        notion.pages.update(page_id=page_id, properties=properties)
-        logging.info(f"Updated 'Washed' status to '{status}' for page {page_id}")
+        notion.pages.update(page_id=wardrobe_item_id, properties=properties)
+        logging.info(f"Updated 'Washed' status to '{status}' for page {wardrobe_item_id}")
     except Exception as e:
-        logging.error(f"Failed to update 'Washed' status for page {page_id}: {e}")
+        logging.error(f"Failed to update 'Washed' status for page {wardrobe_item_id}: {e}")
         raise
 
 
-def archive_page(page_id: str):
+def delete_page(page_id: str):
     """
-    Archives a given Notion page.
+    Deletes (archives) a given Notion page.
     """
     try:
         notion.pages.update(page_id=page_id, archived=True)
-        logging.info(f"Successfully archived page {page_id}")
+        logging.info(f"Successfully deleted (archived) page {page_id}")
     except Exception as e:
-        logging.error(f"Failed to archive page {page_id}: {e}")
+        logging.error(f"Failed to delete (archive) page {page_id}: {e}")
         raise
 
 def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfit_log_id: str):
@@ -547,3 +547,20 @@ def uncheck_hamper_trigger(page_id: str):
         logging.info(f"Unchecked 'Send to Hamper' for page {page_id}")
     except Exception as e:
         logging.error(f"Failed to uncheck 'Send to Hamper' for page {page_id}: {e}")
+
+def get_related_wardrobe_item_id(dirty_item_page_id: str) -> str:
+    """
+    Reads the relation property from a page in the 'Dirty Clothes' database
+    and returns the ID of the main wardrobe item.
+    """
+    try:
+        page = notion.pages.retrieve(page_id=dirty_item_page_id)
+        props = page.get("properties", {})
+        clothing_item_relation = props.get("Clothing Item", {}).get("relation", [])
+        if not clothing_item_relation:
+            logging.error(f"No clothing item relation found for page {dirty_item_page_id}")
+            return None
+        return clothing_item_relation[0]["id"]
+    except Exception as e:
+        logging.error(f"Failed to get related wardrobe item ID from page {dirty_item_page_id}: {e}")
+        return None
