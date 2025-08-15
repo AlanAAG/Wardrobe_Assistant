@@ -11,7 +11,7 @@ from data.notion_utils import (
     clear_page_content,
     clear_trigger_fields,
     OUTPUT_DB_ID,
-    get_checked_todo_items_from_page,
+    get_checked_items_from_page,
     create_page_in_dirty_clothes_db,
     update_items_washed_status
 )
@@ -31,7 +31,7 @@ class OutfitPipelineOrchestrator:
         """
         try:
             logging.info("🧺 Adding worn items to dirty clothes database...")
-            checked_items = get_checked_todo_items_from_page(page_id)
+            checked_items = get_checked_items_from_page(page_id)
             for item in checked_items:
                 # Add to dirty clothes DB
                 create_page_in_dirty_clothes_db(
