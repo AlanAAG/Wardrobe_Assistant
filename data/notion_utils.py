@@ -96,7 +96,7 @@ def get_wardrobe_items(wardrobe_db_id):
         brand_name = brand_select.get("name") if brand_select else None
 
         washed_select = props.get("Washed", {}).get("select", {})
-        washed_value = washed_select.get("name") if washed_select else None
+        washed_value = washed_select.get("name") if washed_select else "Not Done"
 
         color_multi = props.get("Color", {}).get("multi_select", [])
         color_names = [c.get("name") for c in color_multi]
@@ -207,7 +207,7 @@ def extract_image_url_from_blocks(blocks):
 
 def post_outfit_to_notion_page(page_id, outfit_items):
     """
-    Appends a link to each outfit item's page to the given Notion page.
+    Appends a to_do block for each outfit item to the given Notion page.
     outfit_items: list of outfit item dictionaries.
     """
     if not outfit_items:
@@ -216,11 +216,11 @@ def post_outfit_to_notion_page(page_id, outfit_items):
 
     children_to_append = []
     for item in outfit_items:
-        # Create a paragraph block that contains a "mention" of the item's page
+        # Create a to_do block that contains a "mention" of the item's page
         block = {
             "object": "block",
-            "type": "paragraph",
-            "paragraph": {
+            "type": "to_do",
+            "to_do": {
                 "rich_text": [
                     {
                         "type": "mention",
@@ -229,14 +229,15 @@ def post_outfit_to_notion_page(page_id, outfit_items):
                             "page": {"id": item["id"]}
                         }
                     }
-                ]
+                ],
+                "checked": True # Default to checked, user can uncheck if they didn't wear it
             }
         }
         children_to_append.append(block)
 
     try:
         notion.blocks.children.append(block_id=page_id, children=children_to_append)
-        logging.info(f"Posted links for {len(outfit_items)} items to Notion page {page_id}")
+        logging.info(f"Posted to-do list for {len(outfit_items)} items to Notion page {page_id}")
     except Exception as e:
         logging.error(f"Failed to post outfit to Notion page: {e}")
 
@@ -399,3 +400,99 @@ def clear_trigger_fields(page_id):
     except Exception as e:
         logging.error(f"Failed to clear trigger fields for page {page_id}: {e}")
         raise
+
+def update_items_washed_status(page_id: str, status: str = "Done"):
+    """
+    Updates the 'Washed' status of a given clothing item page.
+    """
+    try:
+        properties = {
+            "Washed": {
+                "select": {
+                    "name": status
+                }
+            }
+        }
+        notion.pages.update(page_id=page_id, properties=properties)
+        logging.info(f"Updated 'Washed' status to '{status}' for page {page_id}")
+    except Exception as e:
+        logging.error(f"Failed to update 'Washed' status for page {page_id}: {e}")
+        raise
+
+
+def archive_page(page_id: str):
+    """
+    Archives a given Notion page.
+    """
+    try:
+        notion.pages.update(page_id=page_id, archived=True)
+        logging.info(f"Successfully archived page {page_id}")
+    except Exception as e:
+        logging.error(f"Failed to archive page {page_id}: {e}")
+        raise
+
+def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfit_log_id: str):
+    """
+    Creates a new page in the 'Dirty Clothes' database.
+    """
+    dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID")
+    if not dirty_clothes_db_id:
+        logging.error("NOTION_DIRTY_CLOTHES_DB_ID not set.")
+        return
+
+    try:
+        properties = {
+            "Item Name": {
+                "title": [
+                    {
+                        "text": {
+                            "content": item_name
+                        }
+                    }
+                ]
+            },
+            "Ready for Laundry": {
+                "checkbox": True
+            },
+            "Clothing Item": {
+                "relation": [
+                    {
+                        "id": clothing_item_id
+                    }
+                ]
+            },
+            "Outfit Log": {
+                "relation": [
+                    {
+                        "id": outfit_log_id
+                    }
+                ]
+            }
+        }
+        notion.pages.create(parent={"database_id": dirty_clothes_db_id}, properties=properties)
+        logging.info(f"Added '{item_name}' to Dirty Clothes database.")
+    except Exception as e:
+        logging.error(f"Failed to create page in Dirty Clothes database: {e}")
+        raise
+
+def get_checked_todo_items_from_page(page_id: str) -> list:
+    """
+    Retrieves all checked 'to_do' blocks from a page that mention a clothing item.
+    Returns a list of dicts, each containing the clothing item's page ID and name.
+    """
+    try:
+        blocks = retrieve_page_blocks(page_id)
+        checked_items = []
+        for block in blocks:
+            if block.get("type") == "to_do" and block.get("to_do", {}).get("checked") is True:
+                rich_text = block.get("to_do", {}).get("rich_text", [])
+                for text_item in rich_text:
+                    if text_item.get("type") == "mention" and text_item.get("mention", {}).get("type") == "page":
+                        clothing_item_id = text_item["mention"]["page"]["id"]
+                        item_name = text_item["plain_text"]
+                        checked_items.append({"id": clothing_item_id, "name": item_name})
+        logging.info(f"Found {len(checked_items)} checked to-do items on page {page_id}")
+        return checked_items
+    except Exception as e:
+        logging.error(f"Failed to get checked to-do items from page {page_id}: {e}")
+        return []

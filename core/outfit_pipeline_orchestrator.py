@@ -10,8 +10,12 @@ from data.notion_utils import (
     post_outfit_to_notion_page,
     clear_page_content,
     clear_trigger_fields,
-    OUTPUT_DB_ID
+    OUTPUT_DB_ID,
+    get_checked_todo_items_from_page,
+    create_page_in_dirty_clothes_db,
+    update_items_washed_status
 )
+
 
 class OutfitPipelineOrchestrator:
     """
@@ -20,6 +24,26 @@ class OutfitPipelineOrchestrator:
 
     def __init__(self):
         pass
+
+    async def _add_outfit_to_dirty_clothes(self, page_id: str):
+        """
+        Adds worn items to the "Dirty Clothes" database.
+        """
+        try:
+            logging.info("🧺 Adding worn items to dirty clothes database...")
+            checked_items = get_checked_todo_items_from_page(page_id)
+            for item in checked_items:
+                # Add to dirty clothes DB
+                create_page_in_dirty_clothes_db(
+                    item_name=item["name"],
+                    clothing_item_id=item["id"],
+                    outfit_log_id=page_id
+                )
+                # Mark as "Not Done" in main wardrobe
+                update_items_washed_status(item["id"], "Not Done")
+            logging.info(f"Added {len(checked_items)} items to dirty clothes database.")
+        except Exception as e:
+            logging.error(f"Error adding items to dirty clothes database: {e}", exc_info=True)
 
     async def run_daily_outfit_pipeline(self) -> Dict:
         """
@@ -56,6 +80,10 @@ class OutfitPipelineOrchestrator:
 
             clear_page_content(output_page_id)
             post_outfit_to_notion_page(output_page_id, result["outfit"])
+
+            # 6. Add worn items to dirty clothes database
+            await self._add_outfit_to_dirty_clothes(output_page_id)
+
             clear_trigger_fields(output_page_id)
 
             logging.info("✅ Daily outfit pipeline completed successfully.")
