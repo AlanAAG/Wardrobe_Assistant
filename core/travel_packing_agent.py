@@ -56,6 +56,57 @@ class TravelPackingAgent:
         # Initialize analysis modules
         self.current_destinations = []
     
+    def _prepare_travel_context(self, trip_config: Dict, available_items: Dict) -> Dict:
+        """
+        Prepare and normalize the raw context used by AI prompt builders.
+        Ensures expected keys exist and are in the right format.
+        """
+        try:
+            raw_destinations_and_dates = (
+                trip_config.get("raw_destinations_and_dates")
+                or trip_config.get("destinations")
+                or ""
+            )
+            raw_preferences_and_purpose = (
+                trip_config.get("raw_preferences_and_purpose")
+                or trip_config.get("preferences")
+                or ""
+            )
+            # Normalize bags to list[str]
+            bags_value = trip_config.get("bags", [])
+            if isinstance(bags_value, str):
+                bags_list = [bags_value]
+            elif isinstance(bags_value, (list, tuple)):
+                bags_list = [str(b) for b in bags_value]
+            else:
+                bags_list = []
+
+            context = {
+                "page_id": trip_config.get("page_id"),
+                "raw_destinations_and_dates": str(raw_destinations_and_dates),
+                "raw_preferences_and_purpose": str(raw_preferences_and_purpose),
+                # Both keys supported by different prompt builders
+                "bags": bags_list,
+                "raw_bags": bags_list,
+                "dates": trip_config.get("dates", {}),
+                "weight_constraints": trip_config.get("weight_constraints", self.constraints),
+                "available_items": available_items or {},
+            }
+
+            return context
+        except Exception as e:
+            logging.error(f"Error preparing travel context: {e}", exc_info=True)
+            # Return minimal context to avoid hard failure
+            return {
+                "raw_destinations_and_dates": str(trip_config.get("raw_destinations_and_dates", "")),
+                "raw_preferences_and_purpose": str(trip_config.get("raw_preferences_and_purpose", "")),
+                "bags": [str(b) for b in trip_config.get("bags", []) if isinstance(b, (str, int, float))],
+                "raw_bags": [str(b) for b in trip_config.get("bags", []) if isinstance(b, (str, int, float))],
+                "dates": trip_config.get("dates", {}),
+                "weight_constraints": trip_config.get("weight_constraints", self.constraints),
+                "available_items": available_items or {},
+            }
+
     async def generate_multi_destination_packing_list(self, trip_config: Dict, available_items: Dict, timeout: int = 120) -> Tuple[bool, Optional[Dict], Optional[str]]:
         """
         Primary method: Generate a comprehensive packing list using the Gemini API
