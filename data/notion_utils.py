@@ -409,6 +409,28 @@ def delete_page(page_id: str):
         logging.error(f"Failed to delete (archive) page {page_id}: {e}")
         raise
 
+def update_clothing_washed_status(clothing_item_id: str, washed_status: str):
+    """
+    Updates the 'Washed' field of a clothing item in the wardrobe database.
+    
+    Args:
+        clothing_item_id (str): The ID of the clothing item to update
+        washed_status (str): The status to set ("not started", "washed", etc.)
+    """
+    try:
+        properties = {
+            "Washed": {
+                "select": {
+                    "name": washed_status
+                }
+            }
+        }
+        notion.pages.update(page_id=clothing_item_id, properties=properties)
+        logging.info(f"Updated clothing item {clothing_item_id} washed status to '{washed_status}'")
+    except Exception as e:
+        logging.error(f"Failed to update washed status for clothing item {clothing_item_id}: {e}")
+        raise
+
 def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfit_log_id: str):
     """
     Creates a new page in the 'Dirty Clothes' database.
@@ -429,7 +451,7 @@ def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfi
                     }
                 ]
             },
-            "Ready for Laundry": {
+            "Dirty": {
                 "checkbox": True
             },
             "Clothing Item": {
@@ -449,6 +471,10 @@ def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfi
         }
         notion.pages.create(parent={"database_id": dirty_clothes_db_id}, properties=properties)
         logging.info(f"Added '{item_name}' to Dirty Clothes database.")
+        
+        # Update the original clothing item's washed status to "not started"
+        update_clothing_washed_status(clothing_item_id, "not started")
+        
     except Exception as e:
         logging.error(f"Failed to create page in Dirty Clothes database: {e}")
         raise
@@ -508,6 +534,34 @@ def uncheck_hamper_trigger(page_id: str):
         logging.info(f"Unchecked 'Send to Hamper' for page {page_id}")
     except Exception as e:
         logging.error(f"Failed to uncheck 'Send to Hamper' for page {page_id}: {e}")
+
+def remove_from_dirty_clothes_and_mark_washed(dirty_clothes_page_id: str):
+    """
+    Removes an item from the Dirty Clothes database and marks the original clothing item as 'washed'.
+    
+    Args:
+        dirty_clothes_page_id (str): The ID of the page in the Dirty Clothes database to remove
+    """
+    try:
+        # First, get the related clothing item ID
+        clothing_item_id = get_related_wardrobe_item_id(dirty_clothes_page_id)
+        if not clothing_item_id:
+            logging.error(f"Could not find related clothing item for dirty clothes page {dirty_clothes_page_id}")
+            return False
+        
+        # Archive/delete the dirty clothes page
+        delete_page(dirty_clothes_page_id)
+        logging.info(f"Removed page {dirty_clothes_page_id} from Dirty Clothes database")
+        
+        # Update the original clothing item's washed status to "washed"
+        update_clothing_washed_status(clothing_item_id, "washed")
+        logging.info(f"Marked clothing item {clothing_item_id} as washed")
+        
+        return True
+        
+    except Exception as e:
+        logging.error(f"Failed to remove from dirty clothes and mark as washed for page {dirty_clothes_page_id}: {e}")
+        return False
 
 def get_related_wardrobe_item_id(dirty_item_page_id: str) -> str:
     """

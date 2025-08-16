@@ -218,6 +218,8 @@ if FLASK_AVAILABLE:
             return handle_laundry_day_workflow(page_id)
         elif workflow_type == "hamper":
             return handle_hamper_workflow(page_id)
+        elif workflow_type == "dirty_unchecked":
+            return handle_dirty_unchecked_workflow(page_id)
         else:
             logging.info(f"No workflow triggered for page {page_id}")
             return jsonify({"message": "No workflow conditions met"}), 200
@@ -237,9 +239,16 @@ def determine_workflow_type(page_id):
         parent_db_id = page.get("parent", {}).get("database_id", "").replace("-", "")
         logging.info(f"Checking parent DB ID: {parent_db_id}")
 
-        # Laundry Day workflow
+        # Dirty Clothes database workflows
         dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID", "").replace("-", "")
         if parent_db_id and parent_db_id == dirty_clothes_db_id:
+            # Check for Dirty checkbox being unchecked (item is clean)
+            dirty_prop = props.get("Dirty", {})
+            if dirty_prop.get("type") == "checkbox" and not dirty_prop.get("checkbox"):
+                logging.info("🧽 Dirty checkbox unchecked - item is clean.")
+                return "dirty_unchecked"
+            
+            # Laundry Day workflow
             washed_prop = props.get("Washed", {})
             if washed_prop.get("type") == "checkbox" and washed_prop.get("checkbox"):
                 logging.info("🧺 Laundry day trigger detected.")
@@ -664,6 +673,43 @@ def run_async_hamper_pipeline(hamper_orchestrator, page_id):
         logging.error(f"Error in async hamper pipeline: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
+
+def handle_dirty_unchecked_workflow(page_id):
+    """Handle when a Dirty checkbox is unchecked in the Dirty Clothes database."""
+    try:
+        logging.info(f"🧽 ENTERING handle_dirty_unchecked_workflow for page {page_id}")
+        
+        # Import the function to handle removing from dirty clothes
+        from data.notion_utils import remove_from_dirty_clothes_and_mark_washed
+        
+        # Remove the item from dirty clothes and mark as washed
+        success = remove_from_dirty_clothes_and_mark_washed(page_id)
+        
+        if success:
+            logging.info(f"✅ Successfully processed dirty unchecked workflow for page {page_id}")
+            return jsonify({
+                "success": True,
+                "message": "Item removed from dirty clothes and marked as washed",
+                "workflow": "dirty_unchecked",
+                "page_id": page_id
+            }), 200
+        else:
+            logging.error(f"❌ Failed to process dirty unchecked workflow for page {page_id}")
+            return jsonify({
+                "success": False,
+                "error": "Failed to process dirty unchecked workflow",
+                "workflow": "dirty_unchecked",
+                "page_id": page_id
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"❌ Dirty unchecked workflow error: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Dirty unchecked workflow failed: {str(e)}",
+            "workflow": "dirty_unchecked",
+            "page_id": page_id
+        }), 500
 
 # Only define debug routes if Flask is available
 if FLASK_AVAILABLE:

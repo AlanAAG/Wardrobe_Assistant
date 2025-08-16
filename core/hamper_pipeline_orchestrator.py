@@ -2,7 +2,8 @@ import logging
 from data.notion_utils import (
     get_checked_items_from_page,
     add_items_to_dirty_clothes_db,
-    uncheck_hamper_trigger
+    uncheck_hamper_trigger,
+    update_clothing_washed_status
 )
 
 class HamperPipelineOrchestrator:
