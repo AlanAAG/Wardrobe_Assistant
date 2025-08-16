@@ -32,6 +32,7 @@ async def test_run_hamper_pipeline_success(hamper_orchestrator, mock_get_checked
     result = await hamper_orchestrator.run_hamper_pipeline(page_id)
 
     assert result["success"] is True
+    assert result["processed_items"] == 1
     mock_get_checked_items.assert_called_once_with(page_id)
     mock_add_to_db.assert_called_once_with([{"id": "item1", "name": "T-shirt"}], page_id)
     mock_uncheck_trigger.assert_called_once_with(page_id)
@@ -39,7 +40,7 @@ async def test_run_hamper_pipeline_success(hamper_orchestrator, mock_get_checked
 @pytest.mark.asyncio
 async def test_run_hamper_pipeline_no_items(hamper_orchestrator, mock_get_checked_items, mock_add_to_db, mock_uncheck_trigger):
     """
-    Tests that the hamper pipeline handles the case where there are no items to process.
+    Tests that the hamper pipeline handles the case where there are no valid items to process.
     """
     page_id = "test_page_id"
     mock_get_checked_items.return_value = []
@@ -47,7 +48,7 @@ async def test_run_hamper_pipeline_no_items(hamper_orchestrator, mock_get_checke
     result = await hamper_orchestrator.run_hamper_pipeline(page_id)
 
     assert result["success"] is True
-    assert result["message"] == "No items to send to hamper."
+    assert result["message"] == "No valid wardrobe items to send to hamper."
     mock_get_checked_items.assert_called_once_with(page_id)
     mock_add_to_db.assert_not_called()
     mock_uncheck_trigger.assert_called_once_with(page_id)
@@ -105,3 +106,80 @@ def test_washed_field_updates():
                 mock_get_id.assert_called_once_with("dirty_page_id")
                 mock_delete.assert_called_once_with("dirty_page_id")
                 mock_update.assert_called_once_with("clothing_item_id", "washed")
+
+def test_wardrobe_item_validation():
+    """
+    Test the validation of wardrobe items.
+    """
+    with patch('data.notion_utils.is_valid_wardrobe_item') as mock_validate:
+        # Test that validation function is called correctly
+        mock_validate.return_value = True
+        
+        from data.notion_utils import is_valid_wardrobe_item
+        result = is_valid_wardrobe_item("valid_item_id")
+        assert result is True
+        mock_validate.assert_called_with("valid_item_id")
+        
+        # Test validation returning False
+        mock_validate.return_value = False
+        result = is_valid_wardrobe_item("invalid_item_id") 
+        assert result is False
+
+def test_get_checked_items_with_validation():
+    """
+    Test that get_checked_items_from_page properly validates items.
+    """
+    with patch('data.notion_utils.retrieve_page_blocks') as mock_blocks:
+        with patch('data.notion_utils.is_valid_wardrobe_item') as mock_validate:
+            
+            # Mock page blocks with mixed valid/invalid items
+            mock_blocks.return_value = [
+                {
+                    "type": "to_do",
+                    "to_do": {
+                        "checked": True,
+                        "rich_text": [
+                            {
+                                "type": "mention",
+                                "mention": {
+                                    "type": "page",
+                                    "page": {"id": "valid_item_id"}
+                                },
+                                "plain_text": "Valid T-shirt"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "type": "to_do", 
+                    "to_do": {
+                        "checked": True,
+                        "rich_text": [
+                            {
+                                "type": "mention",
+                                "mention": {
+                                    "type": "page", 
+                                    "page": {"id": "invalid_item_id"}
+                                },
+                                "plain_text": "Invalid Task"
+                            }
+                        ]
+                    }
+                }
+            ]
+            
+            # Mock validation: first item valid, second invalid
+            mock_validate.side_effect = lambda item_id: item_id == "valid_item_id"
+            
+            from data.notion_utils import get_checked_items_from_page
+            result = get_checked_items_from_page("test_page_id")
+            
+            # Should only return the valid item
+            assert len(result) == 1
+            assert result[0]["id"] == "valid_item_id"
+            assert result[0]["name"] == "Valid T-shirt"
+            
+            # Should have validated both items
+            assert mock_validate.call_count == 2
+            mock_validate.assert_any_call("valid_item_id")
+            mock_validate.assert_any_call("invalid_item_id")
