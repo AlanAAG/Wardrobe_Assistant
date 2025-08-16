@@ -440,35 +440,67 @@ def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfi
         logging.error("NOTION_DIRTY_CLOTHES_DB_ID not set.")
         return
 
+    # Resolve actual property names dynamically to tolerate casing/name differences
+    def _get_dirty_db_properties(db_id: str) -> dict:
+        try:
+            db = notion.databases.retrieve(database_id=db_id)
+            return db.get("properties", {})
+        except Exception as e:
+            logging.error(f"Failed to read Dirty Clothes DB schema: {e}")
+            return {}
+
+    def _find_prop_name_by_type(props: dict, candidates: list, expected_type: str) -> str:
+        for name in candidates:
+            p = props.get(name)
+            if p and p.get("type") == expected_type:
+                return name
+        # Fallback: scan for any property with the expected type if no candidate matched
+        for name, p in props.items():
+            if p.get("type") == expected_type:
+                return name
+        return None
+
+    props_schema = _get_dirty_db_properties(dirty_clothes_db_id)
+    title_prop_name = _find_prop_name_by_type(props_schema, ["Item Name", "Name", "Title"], "title")
+    dirty_prop_name = _find_prop_name_by_type(props_schema, ["Dirty", "Is Dirty", "Dirty?"], "checkbox")
+    clothing_rel_prop_name = _find_prop_name_by_type(props_schema, ["Clothing Item", "Clothing item", "Item", "Wardrobe Item"], "relation")
+    outfit_rel_prop_name = _find_prop_name_by_type(props_schema, ["Outfit Log", "Outfit log", "Outfit Entry", "Outfit"], "relation")
+
+    if not title_prop_name:
+        logging.error("Dirty Clothes DB is missing a title property. Cannot create page.")
+        return
+    if not clothing_rel_prop_name:
+        logging.error("Dirty Clothes DB is missing a clothing item relation property. Cannot create page.")
+        return
+    if not outfit_rel_prop_name:
+        logging.warning("Dirty Clothes DB has no outfit relation property; proceeding without linking to outfit log.")
+
     try:
         properties = {
-            "Item Name": {
+            title_prop_name: {
                 "title": [
-                    {
-                        "text": {
-                            "content": item_name
-                        }
-                    }
+                    {"text": {"content": item_name}}
                 ]
             },
-            "Dirty": {
-                "checkbox": True
-            },
-            "Clothing Item": {
+            clothing_rel_prop_name: {
                 "relation": [
-                    {
-                        "id": clothing_item_id
-                    }
-                ]
-            },
-            "Outfit Log": {
-                "relation": [
-                    {
-                        "id": outfit_log_id
-                    }
+                    {"id": clothing_item_id}
                 ]
             }
         }
+        if dirty_prop_name:
+            properties[dirty_prop_name] = {"checkbox": True}
+        if outfit_rel_prop_name:
+            properties[outfit_rel_prop_name] = {
+                "relation": [
+                    {"id": outfit_log_id}
+                ]
+            }
+
+        logging.info(
+            f"Creating Dirty Clothes page with props: title='{title_prop_name}', dirty='{dirty_prop_name}', "
+            f"clothing_relation='{clothing_rel_prop_name}', outfit_relation='{outfit_rel_prop_name}'"
+        )
         notion.pages.create(parent={"database_id": dirty_clothes_db_id}, properties=properties)
         logging.info(f"Added '{item_name}' to Dirty Clothes database.")
         
