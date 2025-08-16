@@ -479,10 +479,43 @@ def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfi
         logging.error(f"Failed to create page in Dirty Clothes database: {e}")
         raise
 
+def is_valid_wardrobe_item(item_id: str) -> bool:
+    """
+    Validates that a page ID belongs to the wardrobe database.
+    
+    Args:
+        item_id (str): The page ID to validate
+        
+    Returns:
+        bool: True if the item is in the wardrobe database, False otherwise
+    """
+    try:
+        page = notion.pages.retrieve(page_id=item_id)
+        parent = page.get("parent", {})
+        
+        # Check if the parent is a database
+        if parent.get("type") != "database_id":
+            return False
+            
+        # Get the wardrobe database ID from environment
+        wardrobe_db_id = os.getenv("NOTION_WARDROBE_DB_ID", "").replace("-", "")
+        parent_db_id = parent.get("database_id", "").replace("-", "")
+        
+        # Return True if this item belongs to the wardrobe database
+        is_valid = parent_db_id == wardrobe_db_id
+        if not is_valid:
+            logging.warning(f"Item {item_id} is not from wardrobe database (parent: {parent_db_id}, expected: {wardrobe_db_id})")
+        
+        return is_valid
+        
+    except Exception as e:
+        logging.error(f"Failed to validate wardrobe item {item_id}: {e}")
+        return False
+
 def get_checked_items_from_page(page_id: str) -> list:
     """
     Retrieves all checked 'to_do' blocks from a page that mention a clothing item,
-    ignoring the "Send to Hamper" block.
+    ignoring the "Send to Hamper" block and validating that mentioned items are actual wardrobe items.
     Returns a list of dicts, each containing the clothing item's page ID and name.
     """
     try:
@@ -498,8 +531,15 @@ def get_checked_items_from_page(page_id: str) -> list:
                     if text_item.get("type") == "mention" and text_item.get("mention", {}).get("type") == "page":
                         clothing_item_id = text_item["mention"]["page"]["id"]
                         item_name = text_item["plain_text"]
-                        checked_items.append({"id": clothing_item_id, "name": item_name})
-        logging.info(f"Found {len(checked_items)} checked items on page {page_id}")
+                        
+                        # Validate that this is actually a wardrobe item
+                        if is_valid_wardrobe_item(clothing_item_id):
+                            checked_items.append({"id": clothing_item_id, "name": item_name})
+                            logging.info(f"Added valid wardrobe item: {item_name} ({clothing_item_id})")
+                        else:
+                            logging.warning(f"Skipping non-wardrobe item: {item_name} ({clothing_item_id})")
+                            
+        logging.info(f"Found {len(checked_items)} valid clothing items on page {page_id}")
         return checked_items
     except Exception as e:
         logging.error(f"Failed to get checked items from page {page_id}: {e}")

@@ -21,13 +21,18 @@ class HamperPipelineOrchestrator:
         try:
             logging.info(f"🧺 Starting 'Send to Hamper' pipeline for page {page_id}...")
 
-            # 1. Get checked items from the page
+            # 1. Get checked items from the page (with validation)
             checked_items = get_checked_items_from_page(page_id)
             if not checked_items:
-                logging.warning("No checked items found to send to hamper.")
+                logging.warning("No valid wardrobe items found to send to hamper. This may be because:")
+                logging.warning("- No items are checked")
+                logging.warning("- Checked items are not from the wardrobe database")
+                logging.warning("- Checked items are not valid page mentions")
                 # Still need to uncheck the trigger
                 uncheck_hamper_trigger(page_id)
-                return {"success": True, "message": "No items to send to hamper."}
+                return {"success": True, "message": "No valid wardrobe items to send to hamper."}
+
+            logging.info(f"Processing {len(checked_items)} valid wardrobe items for hamper workflow")
 
             # 2. Add items to the "Dirty Clothes" database
             add_items_to_dirty_clothes_db(checked_items, page_id)
@@ -36,7 +41,7 @@ class HamperPipelineOrchestrator:
             uncheck_hamper_trigger(page_id)
 
             logging.info(f"✅ 'Send to Hamper' pipeline completed successfully for page {page_id}.")
-            return {"success": True}
+            return {"success": True, "processed_items": len(checked_items)}
 
         except Exception as e:
             logging.error(f"❌ Critical pipeline error in 'Send to Hamper' pipeline: {str(e)}", exc_info=True)
