@@ -284,7 +284,16 @@ def determine_workflow_type(page_id):
         logging.info(f"Checking against Outfit Log DB ID: {outfit_log_db_id}")
         hamper_prop = props.get("Send to Hamper", {})
         if parent_db_id and parent_db_id == outfit_log_db_id:
-            if hamper_prop.get("type") == "checkbox" and hamper_prop.get("checkbox"):
+            prop_checked = (hamper_prop.get("type") == "checkbox" and hamper_prop.get("checkbox"))
+            # Fallback to detecting a checked to-do block named 'Send to Hamper'
+            has_checked_block = False
+            try:
+                from data.notion_utils import has_checked_hamper_todo_block
+                has_checked_block = has_checked_hamper_todo_block(page_id)
+            except Exception as e:
+                logging.error(f"Error checking hamper to-do block: {e}")
+            logging.info(f"Hamper property checked={prop_checked}, hamper to-do checked={has_checked_block}")
+            if prop_checked or has_checked_block:
                 logging.info("🧺 Hamper trigger detected.")
                 return "hamper"
 

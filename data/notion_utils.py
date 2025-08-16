@@ -563,6 +563,7 @@ def add_items_to_dirty_clothes_db(items: list, outfit_log_id: str):
 def uncheck_hamper_trigger(page_id: str):
     """
     Unchecks the 'Send to Hamper' checkbox on a given page.
+    Also unchecks the "Send to Hamper" to-do block if present.
     """
     try:
         properties = {
@@ -571,11 +572,60 @@ def uncheck_hamper_trigger(page_id: str):
             }
         }
         notion.pages.update(page_id=page_id, properties=properties)
-        logging.info(f"Unchecked 'Send to Hamper' for page {page_id}")
+        logging.info(f"Unchecked 'Send to Hamper' property for page {page_id}")
     except Exception as e:
-        logging.error(f"Failed to uncheck 'Send to Hamper' for page {page_id}: {e}")
+        logging.error(f"Failed to uncheck 'Send to Hamper' property for page {page_id}: {e}")
+    
+    # Best-effort: also uncheck the to-do block if it exists and is checked
+    try:
+        find_and_uncheck_hamper_todo_block(page_id)
+    except Exception as e:
+        logging.error(f"Failed to uncheck 'Send to Hamper' to-do block for page {page_id}: {e}")
 
-def remove_from_dirty_clothes_and_mark_washed(dirty_clothes_page_id: str):
+# New helpers for hamper to-do block handling
+def has_checked_hamper_todo_block(page_id: str) -> bool:
+    """
+    Returns True if a to_do block with text containing "Send to Hamper" is present
+    and checked on the given page.
+    """
+    try:
+        blocks = retrieve_page_blocks(page_id)
+        for block in blocks:
+            if block.get("type") != "to_do":
+                continue
+            to_do = block.get("to_do", {})
+            if not to_do.get("checked"):
+                continue
+            rich_text = to_do.get("rich_text", [])
+            if any("Send to Hamper" in t.get("text", {}).get("content", "") for t in rich_text):
+                logging.info("Detected checked 'Send to Hamper' to-do block.")
+                return True
+    except Exception as e:
+        logging.error(f"Error checking for 'Send to Hamper' to-do block on page {page_id}: {e}")
+    return False
+
+def find_and_uncheck_hamper_todo_block(page_id: str) -> None:
+    """
+    Finds the 'Send to Hamper' to-do block and unchecks it if checked.
+    """
+    blocks = retrieve_page_blocks(page_id)
+    for block in blocks:
+        if block.get("type") != "to_do":
+            continue
+        to_do = block.get("to_do", {})
+        rich_text = to_do.get("rich_text", [])
+        if any("Send to Hamper" in t.get("text", {}).get("content", "") for t in rich_text):
+            block_id = block.get("id")
+            try:
+                if to_do.get("checked"):
+                    notion.blocks.update(block_id=block_id, to_do={"checked": False})
+                    logging.info(f"Unchecked 'Send to Hamper' to-do block {block_id} on page {page_id}")
+                return
+            except Exception as e:
+                logging.error(f"Error unchecking 'Send to Hamper' to-do block {block_id} on page {page_id}: {e}")
+                return
+
+def remove_from_dirty_clothes_and_mark_washed(dirty_item_page_id: str):
     """
     Removes an item from the Dirty Clothes database and marks the original clothing item as 'washed'.
     
@@ -584,14 +634,14 @@ def remove_from_dirty_clothes_and_mark_washed(dirty_clothes_page_id: str):
     """
     try:
         # First, get the related clothing item ID
-        clothing_item_id = get_related_wardrobe_item_id(dirty_clothes_page_id)
+        clothing_item_id = get_related_wardrobe_item_id(dirty_item_page_id)
         if not clothing_item_id:
-            logging.error(f"Could not find related clothing item for dirty clothes page {dirty_clothes_page_id}")
+            logging.error(f"Could not find related clothing item for dirty clothes page {dirty_item_page_id}")
             return False
         
         # Archive/delete the dirty clothes page
-        delete_page(dirty_clothes_page_id)
-        logging.info(f"Removed page {dirty_clothes_page_id} from Dirty Clothes database")
+        delete_page(dirty_item_page_id)
+        logging.info(f"Removed page {dirty_item_page_id} from Dirty Clothes database")
         
         # Update the original clothing item's washed status to "washed"
         update_clothing_washed_status(clothing_item_id, "washed")
@@ -600,7 +650,7 @@ def remove_from_dirty_clothes_and_mark_washed(dirty_clothes_page_id: str):
         return True
         
     except Exception as e:
-        logging.error(f"Failed to remove from dirty clothes and mark as washed for page {dirty_clothes_page_id}: {e}")
+        logging.error(f"Failed to remove from dirty clothes and mark as washed for page {dirty_item_page_id}: {e}")
         return False
 
 def get_related_wardrobe_item_id(dirty_item_page_id: str) -> str:
