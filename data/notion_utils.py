@@ -675,9 +675,9 @@ def remove_from_dirty_clothes_and_mark_washed(dirty_item_page_id: str):
         delete_page(dirty_item_page_id)
         logging.info(f"Removed page {dirty_item_page_id} from Dirty Clothes database")
         
-        # Update the original clothing item's washed status to "washed"
-        update_clothing_washed_status(clothing_item_id, "washed")
-        logging.info(f"Marked clothing item {clothing_item_id} as washed")
+        # Update the original clothing item's washed status to "Done"
+        update_clothing_washed_status(clothing_item_id, "Done")
+        logging.info(f"Marked clothing item {clothing_item_id} as Done")
         
         return True
         
