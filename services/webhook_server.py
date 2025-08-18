@@ -60,9 +60,6 @@ def check_environment_variables():
         return False
     
     logging.info("✅ All environment variables present")
-    for var, value in required_vars.items():
-        masked_value = value[:8] + "..." if len(value) > 8 else "***"
-        logging.info(f"   {var}: {masked_value}")
     
     return True
 
