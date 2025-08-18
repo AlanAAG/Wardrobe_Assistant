@@ -432,34 +432,57 @@ class NotionResultPublisher:
                 }
             }
         ]
-        
+
         trip_tips = packing_result.get("trip_tips", {})
-        if isinstance(trip_tips, dict):
-            for tip_category, tips in trip_tips.items():
-                if tips:
-                    if isinstance(tips, list):
-                        tip_text = " • ".join(str(tip) for tip in tips if tip)
-                    else:
-                        tip_text = str(tips)
-                    
-                    if tip_text:
-                        blocks.append({
-                            "object": "block",
-                            "type": "paragraph",
-                            "paragraph": {
-                                "rich_text": [
-                                    {"type": "text", "text": {"content": f"{tip_category.replace('_', ' ').title()}: "}, "annotations": {"bold": True}},
-                                    {"type": "text", "text": {"content": tip_text}}
-                                ]
-                            }
-                        })
-        elif isinstance(trip_tips, str) and trip_tips:
+        if not isinstance(trip_tips, dict):
+            if isinstance(trip_tips, str) and trip_tips:
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": trip_tips}}]}
+                })
+            return blocks
+
+        for destination, tips_by_category in trip_tips.items():
             blocks.append({
                 "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                    "rich_text": [{"type": "text", "text": {"content": trip_tips}}]
-                }
+                "type": "heading_3",
+                "heading_3": {"rich_text": self._create_rich_text(destination, bold=True)}
             })
-        
+
+            if not isinstance(tips_by_category, dict):
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": str(tips_by_category)}}]}
+                })
+                continue
+
+            for category, tips in tips_by_category.items():
+                if not tips:
+                    continue
+
+                # Add category title
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {"rich_text": self._create_rich_text(f"{category.replace('_', ' ').title()}:", bold=True)}
+                })
+
+                # Add tips as a bulleted list
+                if isinstance(tips, list):
+                    for tip in tips:
+                        if tip:
+                            blocks.append({
+                                "object": "block",
+                                "type": "bulleted_list_item",
+                                "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": str(tip)}}]}
+                            })
+                else: # Fallback for non-list tips
+                     blocks.append({
+                        "object": "block",
+                        "type": "bulleted_list_item",
+                        "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": str(tips)}}]}
+                    })
+
         return blocks
