@@ -140,7 +140,7 @@ class TravelPackingAgent:
                 return False, None, "Gemini returned an empty response"
         
             # Parse the AI's response and finalize the packing list
-            packing_result = self._parse_and_optimize_packing_response(
+            packing_result = await self._parse_and_optimize_packing_response(
                 response.text, available_items, trip_config
             )
         
@@ -202,7 +202,7 @@ class TravelPackingAgent:
                 return False, None, "Groq returned an empty response"
         
             # Parse the AI's response and finalize the packing list
-            packing_result = self._parse_and_optimize_packing_response(
+            packing_result = await self._parse_and_optimize_packing_response(
                 response_text, available_items, trip_config
             )
         
@@ -438,7 +438,7 @@ class TravelPackingAgent:
         """System prompt for Groq"""
         return """You are an expert travel packing consultant specializing in long-term business relocations. You optimize for weight efficiency, cultural appropriateness, climate adaptation, and professional requirements. You provide precise, actionable packing recommendations with detailed reasoning."""
     
-    def _parse_and_optimize_packing_response(self, response_text: str, available_items: Dict, trip_config: Dict) -> Optional[Dict]:
+    async def _parse_and_optimize_packing_response(self, response_text: str, available_items: Dict, trip_config: Dict) -> Optional[Dict]:
         """Parse AI response and optimize the packing selection"""
         try:
             # Extract selected items from response
@@ -455,7 +455,7 @@ class TravelPackingAgent:
             optimized_selection = self._optimize_selection(selected_items, trip_config)
             
             # Calculate comprehensive results
-            packing_result = self._calculate_packing_results(optimized_selection, trip_config)
+            packing_result = await self._calculate_packing_results(optimized_selection, trip_config)
             
             # Log key metrics before validation
             logging.info(f"Packing result: {packing_result['total_items']} items, {packing_result['total_weight_kg']}kg, business readiness: {packing_result['business_readiness']['readiness_score']}")
@@ -687,7 +687,7 @@ class TravelPackingAgent:
         # Medium score for neutral items
         return 0.7
     
-    def _calculate_packing_results(self, selected_items: List[Dict], trip_config: Dict) -> Dict:
+    async def _calculate_packing_results(self, selected_items: List[Dict], trip_config: Dict) -> Dict:
         """Calculate comprehensive packing results"""
         
         # Basic calculations
@@ -712,7 +712,7 @@ class TravelPackingAgent:
             "climate_coverage": self._assess_climate_coverage(selected_items, trip_config),
             "cultural_compliance": self._assess_cultural_compliance(selected_items),
             "packing_guide": self._generate_packing_guide(selected_items, bag_allocation),
-            "trip_tips": self._generate_destination_tips(trip_config)
+            "trip_tips": await self._generate_destination_tips(trip_config)
         }
         
         return results
@@ -975,69 +975,168 @@ class TravelPackingAgent:
             }
         }
     
-    def _generate_destination_tips(self, trip_config: Dict) -> Dict:
-        """Generate destination-specific tips resilient to raw or structured input."""
+    async def _get_web_search_context(self, city: str, trip_config: Dict) -> str:
+        """
+        Performs web searches to gather real-time context for a given destination.
+        This method is a placeholder for where web search tools would be integrated.
+        """
+        # In a real implementation, this method would use tools like:
+        # from your_tools import google_search, view_text_website
+
+        logging.info(f"Web search for {city} is a placeholder. No live search performed.")
+        # Returning an empty string to signify that no web context is available.
+        # The prompt is designed to work even with an empty context string.
+        return ""
+
+    def _build_destination_tip_prompt(self, city: str, trip_config: Dict, web_context: str) -> str:
+        """
+        Builds a detailed, dynamic prompt for Gemini to generate comprehensive travel tips.
+        """
+        # Extract trip context for personalization
+        purpose = trip_config.get("raw_preferences_and_purpose", "a business school trip")
+
+        # Get trip dates for seasonal context
+        start_date_str = trip_config.get("dates", {}).get("start")
+        end_date_str = trip_config.get("dates", {}).get("end")
+
+        if start_date_str and end_date_str:
+            try:
+                start_date = datetime.fromisoformat(start_date_str[:10])
+                end_date = datetime.fromisoformat(end_date_str[:10])
+                duration = (end_date - start_date).days
+                season = f"from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+            except (ValueError, TypeError):
+                season = "an upcoming trip"
+        else:
+            season = "an upcoming trip"
+
+        # Dynamically build the web context section only if context is available
+        web_context_section = ""
+        if web_context and web_context.strip():
+            web_context_section = f"""
+**WEB SEARCH CONTEXT:**
+Here is some information from recent web searches about {city}. Use this to ensure your tips are current and accurate.
+---
+{web_context}
+---
+"""
+
+        prompt = f"""
+You are an expert travel content creator and destination specialist. Your task is to generate a rich, personalized, and genuinely helpful travel guide for a traveler visiting **{city}**.
+
+**TRAVELER CONTEXT:**
+* **Destination:** {city}
+* **Purpose of Trip:** {purpose}
+* **Travel Period:** {season}
+{web_context_section}
+**INSTRUCTIONS:**
+Based on your extensive knowledge and the provided web search context (if any), create a comprehensive set of travel tips. The tips should be practical, encouraging, and culturally sensitive. Your entire response MUST be a valid JSON object.
+
+**JSON OUTPUT STRUCTURE:**
+Please structure your response in the following JSON format. Each category should contain a list of concise, actionable tips as strings.
+
+{{
+  "cultural_intelligence": [
+    "Tip 1...",
+    "Tip 2..."
+  ],
+  "climate_and_weather": [
+    "Tip 1...",
+    "Tip 2..."
+  ],
+  "transportation_and_navigation": [
+    "Tip 1...",
+    "Tip 2..."
+  ],
+  "food_and_dining": [
+    "Tip 1...",
+    "Tip 2..."
+  ],
+  "business_traveler_specifics": [
+    "Tip 1...",
+    "Tip 2..."
+  ],
+  "safety_and_health": [
+    "Tip 1...",
+    "Tip 2..."
+  ],
+  "local_life_and_hidden_gems": [
+    "Tip 1...",
+    "Tip 2..."
+  ]
+}}
+
+**CONTENT REQUIREMENTS:**
+1.  **Cultural Intelligence:** Cover local customs, greetings, tipping practices, and dress codes for religious or cultural sites.
+2.  **Climate & Weather:** Provide practical advice on what to wear, best times for outdoor activities, and seasonal considerations for {season}.
+3.  **Transportation:** Recommend the best apps and methods for getting around, comment on traffic, and explain public transport etiquette.
+4.  **Food & Dining:** Suggest must-try local specialties, advise on street food safety, and explain meal timing customs.
+5.  **Business Traveler Specifics:** Include tips on business etiquette, networking spots, co-working spaces, and professional dress norms.
+6.  **Safety & Health:** Offer practical safety awareness, health precautions, and emergency contact info without being alarmist.
+7.  **Local Life & Hidden Gems:** Share authentic experiences, unique shopping areas, and useful local phrases.
+
+Ensure the tone is enthusiastic and the information is current and accurate.
+"""
+        return prompt
+
+    async def _generate_destination_tips(self, trip_config: Dict) -> Dict:
+        """
+        Generates rich, dynamic, and actionable destination-specific tips using AI and web search.
+        This method replaces the static, template-based approach.
+        """
         tips: Dict[str, Dict] = {}
 
-        # Determine destination city list
+        # Determine destination city list from trip_config
         cities: List[str] = []
         if isinstance(trip_config.get("destinations"), list) and trip_config["destinations"] and isinstance(trip_config["destinations"][0], dict):
-            cities = [str(d.get("city", "")).lower() for d in trip_config["destinations"] if d.get("city")]
+            cities = [str(d.get("city", "")).title() for d in trip_config["destinations"] if d.get("city")]
         else:
             raw_dests = trip_config.get("raw_destinations_and_dates", [])
             if isinstance(raw_dests, list):
-                cities = [str(x).lower() for x in raw_dests]
+                cities = [str(x).title() for x in raw_dests]
             else:
-                cities = [c.strip().lower() for c in str(raw_dests).split(",") if c.strip()]
+                # Basic parsing for comma-separated city names
+                cities = [c.strip().title() for c in str(raw_dests).split(',') if c.strip()]
 
         if not cities:
-            cities = list(self.destinations.keys())
+            logging.warning("No destination cities found in trip_config for tip generation.")
+            return {}
 
         for city in cities:
-            if city not in self.destinations:
-                continue
-            city_config = self.destinations[city]
+            try:
+                logging.info(f"Generating dynamic tips for {city}...")
 
-            # Determine rough expected weather strings across the trip window if dates exist
-            expected_weather: List[str] = []
-            seasons = city_config.get("seasons", {})
-            if trip_config.get("dates", {}).get("start"):
-                try:
-                    from datetime import datetime
-                    start_dt = datetime.fromisoformat(trip_config["dates"]["start"][:19])
-                    end_raw = trip_config["dates"].get("end") or trip_config["dates"]["start"]
-                    end_dt = datetime.fromisoformat(end_raw[:19])
-                    cursor = start_dt
-                    seen_months = set()
-                    while cursor <= end_dt and len(seen_months) < 12:
-                        month_name = cursor.strftime("%B").lower()
-                        seen_months.add(month_name)
-                        cursor = cursor.replace(day=1)
-                        # advance to next month
-                        if cursor.month == 12:
-                            cursor = cursor.replace(year=cursor.year + 1, month=1)
-                        else:
-                            cursor = cursor.replace(month=cursor.month + 1)
-                    for m in seen_months:
-                        if m in seasons:
-                            expected_weather.append(seasons[m].get("weather", ""))
-                except Exception:
-                    pass
-            if not expected_weather:
-                expected_weather = [data.get("weather", "") for data in seasons.values()]
+                # Step 1: Gather real-time context from the web (placeholder)
+                web_context = await self._get_web_search_context(city, trip_config)
 
-            tips[city] = {
-                "cultural_tips": [
-                    f"Modesty level: {city_config.get('cultural_context', {}).get('modesty_level', 'n/a')}",
-                    f"Business formality: {city_config.get('cultural_context', {}).get('business_formality', 'n/a')}",
-                    "Respect local dress codes at all times",
-                ],
-                "climate_preparation": [
-                    f"Climate type: {city_config.get('climate_profile', 'n/a')}",
-                    f"Expected weather: {', '.join(expected_weather)}",
-                ],
-                "practical_advice": city_config.get("climate_recommendations", {}).get("essential_items", []),
-            }
+                # Step 2: Build the prompt with the web context
+                prompt = self._build_destination_tip_prompt(city, trip_config, web_context)
+
+                if not self.gemini_model:
+                    logging.error("Gemini model not available for tip generation.")
+                    tips[city.lower()] = {"error": "AI model not configured."}
+                    continue
+
+                # Step 3: Generate content with the AI
+                response = await asyncio.to_thread(
+                    self.gemini_model.generate_content,
+                    prompt,
+                    generation_config={"response_mime_type": "application/json"}
+                )
+
+                # Step 4: Sanitize and parse the JSON response
+                response_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+                tip_data = json.loads(response_text)
+
+                tips[city.lower()] = tip_data
+                logging.info(f"Successfully generated and parsed tips for {city}.")
+
+            except json.JSONDecodeError:
+                logging.error(f"Failed to decode JSON from Gemini response for {city}. Response text: {response.text[:500]}")
+                tips[city.lower()] = {"error": "Failed to parse AI response."}
+            except Exception as e:
+                logging.error(f"An unexpected error occurred while generating tips for {city}: {e}", exc_info=True)
+                tips[city.lower()] = {"error": f"An unexpected error occurred: {e}"}
 
         return tips
 
