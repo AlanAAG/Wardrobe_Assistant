@@ -24,6 +24,10 @@ class NotionResultPublisher:
         """
         try:
             logging.info(f"🧳 Finalizing packing results using {generation_method}...")
+
+            # Immediately clear trigger fields to prevent re-triggering
+            await asyncio.to_thread(self._clear_travel_trigger_fields_safe, page_id)
+
             self._log_packing_summary(packing_result)
 
             await self._update_trip_worthy_selections(packing_result["selected_items"])
@@ -36,7 +40,6 @@ class NotionResultPublisher:
                 generation_method,
             )
             await self._generate_and_post_example_outfits(page_id, packing_result, trip_config)
-            await asyncio.to_thread(self._clear_travel_trigger_fields_safe, page_id)
 
             logging.info("✅ Finalization completed successfully")
             return {"success": True}
