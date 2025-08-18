@@ -11,6 +11,7 @@ from core.ai_packing_optimizer import AIPackingOptimizer
 from core.notion_result_publisher import NotionResultPublisher
 from data.data_manager import wardrobe_data_manager
 from data.notion_utils import notion
+from core.utils import categorize_items_by_category
 
 load_dotenv()
 
@@ -109,20 +110,10 @@ class TravelPipelineOrchestrator:
                 logging.error("❌ No wardrobe items available from any data source")
                 return {}
             logging.info(f"✅ Retrieved {len(all_items)} wardrobe items")
-            return self._categorize_items_for_travel(all_items)
+            return categorize_items_by_category(all_items)
         except Exception as e:
             logging.error(f"❌ Error in wardrobe data acquisition: {e}", exc_info=True)
             return {}
-
-    def _categorize_items_for_travel(self, all_items: list) -> Dict:
-        """Categorizes items for travel optimization."""
-        categorized = {}
-        for item in all_items:
-            category = item.get('category', 'Unknown')
-            if category not in categorized:
-                categorized[category] = []
-            categorized[category].append(item)
-        return categorized
 
     def _create_error_result(self, error_message: str, pipeline_start: float) -> Dict:
         """Creates a standardized error result."""
