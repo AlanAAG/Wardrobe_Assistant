@@ -180,13 +180,40 @@ class NotionResultPublisher:
             }
         ]
 
+    def _validate_blocks(self, blocks: List[Dict]) -> List[Dict]:
+        """Validate and sanitize blocks before sending to Notion API."""
+        validated_blocks = []
+        for i, block in enumerate(blocks):
+            try:
+                # Check for common formatting issues
+                if block.get("type") == "paragraph":
+                    paragraph = block.get("paragraph", {})
+                    rich_text = paragraph.get("rich_text", [])
+                    for rt_item in rich_text:
+                        # Ensure annotations are at the top level, not nested in text
+                        if "text" in rt_item and "annotations" in rt_item["text"]:
+                            # Move annotations to top level
+                            rt_item["annotations"] = rt_item["text"]["annotations"]
+                            del rt_item["text"]["annotations"]
+                
+                validated_blocks.append(block)
+            except Exception as e:
+                logging.warning(f"⚠️  Block {i} validation issue: {e}, skipping block")
+                continue
+        
+        return validated_blocks
+
     def _post_blocks_in_chunks(self, page_id: str, blocks: List[Dict]) -> None:
         """Post blocks to Notion in optimal chunks with retry logic for conflicts."""
+        # Validate blocks first
+        validated_blocks = self._validate_blocks(blocks)
+        logging.info(f"📝 Validated {len(validated_blocks)} blocks (original: {len(blocks)})")
+        
         chunk_size = 100
         max_retries = 3
         
-        for i in range(0, len(blocks), chunk_size):
-            chunk = blocks[i:i + chunk_size]
+        for i in range(0, len(validated_blocks), chunk_size):
+            chunk = validated_blocks[i:i + chunk_size]
             chunk_num = i//chunk_size + 1
             
             for attempt in range(max_retries):
@@ -202,6 +229,11 @@ class NotionResultPublisher:
                         logging.warning(f"⚠️  Conflict on chunk {chunk_num}, retry {attempt + 1}/{max_retries} in {wait_time}s")
                         time.sleep(wait_time)
                         continue
+                    elif "body failed validation" in error_str:
+                        logging.error(f"❌ Block validation error in chunk {chunk_num}: {e}")
+                        # Log the problematic chunk for debugging
+                        logging.error(f"Problematic chunk content: {chunk}")
+                        raise
                     else:
                         logging.error(f"❌ Failed to post chunk {chunk_num} after {attempt + 1} attempts: {e}")
                         raise
@@ -269,6 +301,16 @@ class NotionResultPublisher:
                 logging.info(f"✅ Cleared {len(update_properties)} trigger fields")
         except Exception as e:
             logging.warning(f"⚠️  Could not clear trigger fields (non-critical): {e}")
+
+    def _create_rich_text(self, content: str, bold: bool = False) -> List[Dict]:
+        """Helper to create properly formatted rich text for Notion API."""
+        rich_text_item = {
+            "type": "text",
+            "text": {"content": content}
+        }
+        if bold:
+            rich_text_item["annotations"] = {"bold": True}
+        return [rich_text_item]
 
     def _create_analysis_blocks(self, packing_result: Dict) -> List[Dict]:
         """Create analysis section with business readiness, climate coverage, etc."""
@@ -341,7 +383,7 @@ class NotionResultPublisher:
                 "type": "paragraph",
                 "paragraph": {
                     "rich_text": [
-                        {"type": "text", "text": {"content": "**Checked Bag:** ", "annotations": {"bold": True}}},
+                        {"type": "text", "text": {"content": "Checked Bag: "}, "annotations": {"bold": True}},
                         {"type": "text", "text": {"content": f"{checked_bag.get('item_count', 0)} items, {checked_bag.get('weight_kg', 0):.1f}kg ({checked_bag.get('space_utilization', 0):.1f}% full)"}}
                     ]
                 }
@@ -352,7 +394,7 @@ class NotionResultPublisher:
                 "type": "paragraph",
                 "paragraph": {
                     "rich_text": [
-                        {"type": "text", "text": {"content": "**Cabin Bag:** ", "annotations": {"bold": True}}},
+                        {"type": "text", "text": {"content": "Cabin Bag: "}, "annotations": {"bold": True}},
                         {"type": "text", "text": {"content": f"{cabin_bag.get('item_count', 0)} items, {cabin_bag.get('weight_kg', 0):.1f}kg ({cabin_bag.get('space_utilization', 0):.1f}% full)"}}
                     ]
                 }
@@ -368,7 +410,7 @@ class NotionResultPublisher:
                         "type": "paragraph",
                         "paragraph": {
                             "rich_text": [
-                                {"type": "text", "text": {"content": f"**{guide_section.replace('_', ' ').title()}:** ", "annotations": {"bold": True}}},
+                                {"type": "text", "text": {"content": f"{guide_section.replace('_', ' ').title()}: "}, "annotations": {"bold": True}},
                                 {"type": "text", "text": {"content": content}}
                             ]
                         }
@@ -403,7 +445,7 @@ class NotionResultPublisher:
                             "type": "paragraph",
                             "paragraph": {
                                 "rich_text": [
-                                    {"type": "text", "text": {"content": f"**{tip_category.replace('_', ' ').title()}:** ", "annotations": {"bold": True}}},
+                                    {"type": "text", "text": {"content": f"{tip_category.replace('_', ' ').title()}: "}, "annotations": {"bold": True}},
                                     {"type": "text", "text": {"content": tip_text}}
                                 ]
                             }
