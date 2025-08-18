@@ -290,13 +290,28 @@ class TravelPackingAgent:
     1.  **Calculate Clothing Weight Budget**: First, calculate the total luggage weight allowance from the user's input (e.g., "Checked Bag: 23kg, Cabin Bag: 10kg" = 33kg total). Then, intelligently estimate a realistic portion of this total weight that should be allocated for clothes, reserving the rest for essentials like electronics, toiletries, and shoes. This will be your **Clothing Weight Budget**.
     2.  **Analyze Itinerary**: Parse the user's input to identify the destinations, dates, and purpose of the trip.
     3.  **Determine Climate & Culture**: For each destination and its timeline, use your knowledge to determine the expected climate and cultural dress norms.
-    4.  **Synthesize a Plan**: Based on all of the above, formulate a packing strategy that respects the **Clothing Weight Budget** you calculated in step 1.
+    4.  **Prioritize Business Requirements**: Since this is business school travel, ensure you include:
+       - At least 1 suit for formal events
+       - Formal shoes (dress shoes/loafers)
+       - Business shirts or polos with formal aesthetic
+       - Professional casual items for daily wear
+    5.  **Focus on Versatility**: Select items that can be mixed and matched across multiple occasions and weather conditions.
+    6.  **Synthesize a Plan**: Based on all of the above, formulate a packing strategy that respects the **Clothing Weight Budget** you calculated in step 1.
 
     **AVAILABLE WARDROBE (SELECT ONLY FROM THIS LIST)**
     {self._format_items_with_intelligence(context["available_items"], context)}
 
     **CRITICAL OUTPUT INSTRUCTIONS**
     Your entire response must be ONLY a list of the selected items under the heading "SELECTED_ITEMS:". Each item must be on a new line.
+    
+    **QUALITY CHECKS** (Ensure your selection includes):
+    ✓ At least 1 suit (required for business events)
+    ✓ At least 1 pair of formal shoes
+    ✓ 3-5 business appropriate shirts/polos
+    ✓ 5-8 casual tops for variety
+    ✓ 3-5 bottoms that mix and match
+    ✓ Items suitable for the expected climate
+    ✓ Total weight under your calculated clothing budget
 
     **YOUR RESPONSE:**
     SELECTED_ITEMS:
