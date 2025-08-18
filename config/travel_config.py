@@ -323,10 +323,10 @@ DESTINATION_TEMPLATE = {
 # Error handling and validation
 VALIDATION_RULES = {
     "minimum_items_per_category": {
-        "business_formal": 2,  # At least 2 business outfits
-        "casual_tops": 8,      # At least 8 casual tops for variety
-        "bottoms": 6,          # At least 6 bottoms for mixing
-        "footwear": 3          # At least 3 pairs of shoes
+        "business_formal": 1,  # At least 1 business outfit (more realistic)
+        "casual_tops": 5,      # At least 5 casual tops for variety (reduced from 8)
+        "bottoms": 4,          # At least 4 bottoms for mixing (reduced from 6)
+        "footwear": 2          # At least 2 pairs of shoes (reduced from 3)
     },
     
     "maximum_items_per_category": {
