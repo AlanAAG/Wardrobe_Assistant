@@ -9,7 +9,7 @@ import logging
 
 # Module-level variables for lazy loading
 _outfit_logic = None
-_pipeline_orchestrator = None
+_outfit_pipeline_orchestrator = None
 _travel_pipeline_orchestrator = None
 _llm_agents = None
 
@@ -27,15 +27,15 @@ def get_build_outfit():
 
 def get_pipeline_orchestrator():
     """Get pipeline orchestrator with lazy loading."""
-    global _pipeline_orchestrator
-    if _pipeline_orchestrator is None:
+    global _outfit_pipeline_orchestrator
+    if _outfit_pipeline_orchestrator is None:
         try:
-            from .pipeline_orchestrator import run_enhanced_outfit_pipeline
-            _pipeline_orchestrator = run_enhanced_outfit_pipeline
+            from .outfit_pipeline_orchestrator import run_daily_outfit_pipeline
+            _outfit_pipeline_orchestrator = run_daily_outfit_pipeline
         except ImportError as e:
             logging.error(f"Failed to import pipeline orchestrator: {e}")
-            _pipeline_orchestrator = None
-    return _pipeline_orchestrator
+            _outfit_pipeline_orchestrator = None
+    return _outfit_pipeline_orchestrator
 
 def get_travel_pipeline_orchestrator():
     """Get travel pipeline orchestrator with lazy loading."""
