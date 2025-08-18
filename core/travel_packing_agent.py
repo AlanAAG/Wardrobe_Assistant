@@ -240,6 +240,36 @@ class TravelPackingAgent:
                     analysis["climate_versatile_count"] += 1
         
         return analysis
+
+    def _prepare_travel_context(self, trip_config: Dict, available_items: Dict) -> Dict:
+        """Prepares a lean context for prompting using raw inputs.
+
+        This method is resilient to both legacy and new trigger formats.
+        """
+        # Destinations can be a list (e.g., ["Dubai", "Gurgaon"]) or a raw string
+        raw_dests = trip_config.get("raw_destinations_and_dates", "")
+        if isinstance(raw_dests, list):
+            raw_destinations_and_dates = ", ".join([str(x) for x in raw_dests])
+        else:
+            raw_destinations_and_dates = str(raw_dests)
+
+        # Preferences as plain string
+        raw_preferences_and_purpose = str(trip_config.get("raw_preferences_and_purpose", "")).strip()
+
+        # Bags as provided by Notion, e.g., ["Checked Bag: 23kg", "Cabin Bag: 10kg"]
+        bags_list = trip_config.get("bags", []) or []
+        if not isinstance(bags_list, list):
+            bags_list = [str(bags_list)]
+
+        context = {
+            "raw_destinations_and_dates": raw_destinations_and_dates,
+            "raw_preferences_and_purpose": raw_preferences_and_purpose,
+            # Provide both keys for prompts that reference either
+            "raw_bags": bags_list,
+            "bags": bags_list,
+            "available_items": available_items,
+        }
+        return context
     
     def _build_dynamic_service_prompt(self, context: Dict) -> str:
         """
@@ -487,6 +517,7 @@ class TravelPackingAgent:
                 current_weight += weight
         
         logging.info(f"Optimization: {len(selected_items)} → {len(optimized)} items, weight: {current_weight:.2f}kg")
+        return optimized
     
     def _calculate_comprehensive_efficiency(self, item: Dict, trip_config: Dict) -> float:
         """Calculate comprehensive efficiency score for an item"""
@@ -742,17 +773,25 @@ class TravelPackingAgent:
         }
     
     def _assess_climate_coverage(self, selected_items: List[Dict], trip_config: Dict) -> Dict:
-        """Assess climate coverage of selection"""
-        
-        hot_weather_items = [i for i in selected_items 
-                            if 'hot' in [w.lower() for w in i.get('weather', [])]]
-        cold_weather_items = [i for i in selected_items 
-                             if 'cold' in [w.lower() for w in i.get('weather', [])]]
-        versatile_items = [i for i in selected_items 
-                          if len(i.get('weather', [])) == 0 or len(i.get('weather', [])) >= 2]
-        
-        temp_range = self._calculate_temperature_range(trip_config["destinations"])
-        
+        """Assess climate coverage of selection with robust destination parsing."""
+        hot_weather_items = [i for i in selected_items if 'hot' in [w.lower() for w in i.get('weather', [])]]
+        cold_weather_items = [i for i in selected_items if 'cold' in [w.lower() for w in i.get('weather', [])]]
+        versatile_items = [i for i in selected_items if len(i.get('weather', [])) == 0 or len(i.get('weather', [])) >= 2]
+
+        # Determine cities from either structured or raw input
+        cities: List[str] = []
+        if isinstance(trip_config.get("destinations"), list) and trip_config["destinations"] and isinstance(trip_config["destinations"][0], dict):
+            cities = [str(d.get("city", "")).lower() for d in trip_config["destinations"] if d.get("city")]
+        else:
+            raw_dests = trip_config.get("raw_destinations_and_dates", [])
+            if isinstance(raw_dests, list):
+                cities = [str(x).lower() for x in raw_dests]
+            else:
+                # Extract simple city tokens from a freeform string (split by commas)
+                cities = [c.strip().lower() for c in str(raw_dests).split(",") if c.strip()]
+
+        temp_range = self._calculate_temperature_range(cities)
+
         return {
             "hot_weather_coverage": len(hot_weather_items),
             "cold_weather_coverage": len(cold_weather_items),
@@ -760,6 +799,38 @@ class TravelPackingAgent:
             "temperature_range_covered": f"{temp_range['min']}°C - {temp_range['max']}°C",
             "coverage_adequacy": "excellent" if len(versatile_items) > 10 else "good" if len(versatile_items) > 5 else "needs_improvement"
         }
+
+    def _calculate_temperature_range(self, cities: List[str]) -> Dict:
+        """Calculate min/max temperature across destination cities using config seasons.
+
+        If cities is empty, consider all configured cities.
+        """
+        if not cities:
+            cities = list(self.destinations.keys())
+        # Normalize to config keys
+        normalized = []
+        for c in cities:
+            key = str(c).strip().lower()
+            if key in self.destinations:
+                normalized.append(key)
+        if not normalized:
+            normalized = list(self.destinations.keys())
+
+        min_temp = float("inf")
+        max_temp = float("-inf")
+        for city in normalized:
+            seasons = self.destinations[city].get("seasons", {})
+            for m, data in seasons.items():
+                tr = data.get("temp_range") or []
+                if isinstance(tr, (list, tuple)) and len(tr) == 2:
+                    try:
+                        min_temp = min(min_temp, float(tr[0]))
+                        max_temp = max(max_temp, float(tr[1]))
+                    except Exception:
+                        continue
+        if min_temp == float("inf") or max_temp == float("-inf"):
+            return {"min": 0, "max": 0}
+        return {"min": int(min_temp), "max": int(max_temp)}
     
     def _assess_cultural_compliance(self, selected_items: List[Dict]) -> Dict:
         """Assess cultural compliance of selection"""
@@ -825,27 +896,80 @@ class TravelPackingAgent:
         }
     
     def _generate_destination_tips(self, trip_config: Dict) -> Dict:
-        """Generate destination-specific tips"""
-        
-        tips = {}
-        for dest in trip_config["destinations"]:
-            city = dest["city"]
+        """Generate destination-specific tips resilient to raw or structured input."""
+        tips: Dict[str, Dict] = {}
+
+        # Determine destination city list
+        cities: List[str] = []
+        if isinstance(trip_config.get("destinations"), list) and trip_config["destinations"] and isinstance(trip_config["destinations"][0], dict):
+            cities = [str(d.get("city", "")).lower() for d in trip_config["destinations"] if d.get("city")]
+        else:
+            raw_dests = trip_config.get("raw_destinations_and_dates", [])
+            if isinstance(raw_dests, list):
+                cities = [str(x).lower() for x in raw_dests]
+            else:
+                cities = [c.strip().lower() for c in str(raw_dests).split(",") if c.strip()]
+
+        if not cities:
+            cities = list(self.destinations.keys())
+
+        for city in cities:
+            if city not in self.destinations:
+                continue
             city_config = self.destinations[city]
-            
+
+            # Determine rough expected weather strings across the trip window if dates exist
+            expected_weather: List[str] = []
+            seasons = city_config.get("seasons", {})
+            if trip_config.get("dates", {}).get("start"):
+                try:
+                    from datetime import datetime
+                    start_dt = datetime.fromisoformat(trip_config["dates"]["start"][:19])
+                    end_raw = trip_config["dates"].get("end") or trip_config["dates"]["start"]
+                    end_dt = datetime.fromisoformat(end_raw[:19])
+                    cursor = start_dt
+                    seen_months = set()
+                    while cursor <= end_dt and len(seen_months) < 12:
+                        month_name = cursor.strftime("%B").lower()
+                        seen_months.add(month_name)
+                        cursor = cursor.replace(day=1)
+                        # advance to next month
+                        if cursor.month == 12:
+                            cursor = cursor.replace(year=cursor.year + 1, month=1)
+                        else:
+                            cursor = cursor.replace(month=cursor.month + 1)
+                    for m in seen_months:
+                        if m in seasons:
+                            expected_weather.append(seasons[m].get("weather", ""))
+                except Exception:
+                    pass
+            if not expected_weather:
+                expected_weather = [data.get("weather", "") for data in seasons.values()]
+
             tips[city] = {
                 "cultural_tips": [
-                    f"Modesty level: {city_config['cultural_context']['modesty_level']}",
-                    f"Business formality: {city_config['cultural_context']['business_formality']}",
-                    "Respect local dress codes at all times"
+                    f"Modesty level: {city_config.get('cultural_context', {}).get('modesty_level', 'n/a')}",
+                    f"Business formality: {city_config.get('cultural_context', {}).get('business_formality', 'n/a')}",
+                    "Respect local dress codes at all times",
                 ],
                 "climate_preparation": [
-                    f"Climate type: {city_config['climate_profile']}",
-                    f"Expected weather: {', '.join([city_config['seasons'][m]['weather'] for m in self._get_months_in_destination(dest['start_date'], dest['end_date']) if m in city_config['seasons']])}"
+                    f"Climate type: {city_config.get('climate_profile', 'n/a')}",
+                    f"Expected weather: {', '.join(expected_weather)}",
                 ],
-                "practical_advice": city_config.get("climate_recommendations", {}).get("essential_items", [])
+                "practical_advice": city_config.get("climate_recommendations", {}).get("essential_items", []),
             }
-        
+
         return tips
+
+    def _categorize_items_for_travel(self, items: List[Dict]) -> Dict:
+        """Categorize a flat list of items by their 'category' field."""
+        categorized: Dict[str, List[Dict]] = {}
+        for item in items or []:
+            category = item.get("category", "Unknown")
+            if category not in categorized:
+                categorized[category] = []
+            categorized[category].append(item)
+        return categorized
     
     def _validate_packing_completeness(self, packing_result: Dict) -> bool:
         """Validate that packing list meets minimum requirements"""
