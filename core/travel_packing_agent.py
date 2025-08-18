@@ -718,60 +718,51 @@ class TravelPackingAgent:
         return results
     
     def _allocate_items_to_bags(self, selected_items: List[Dict]) -> Dict:
-        """Allocate items between checked and cabin bags"""
+        """Allocate items between checked and cabin bags with simplified logic."""
         
         checked_items = []
         cabin_items = []
-        checked_weight = 0
-        cabin_weight = 0
+        checked_weight = 0.0
+        cabin_weight = 0.0
         
-        # Strategic allocation
+        # Get capacities from config
+        checked_bag_capacity = self.constraints.get("clothes_allocation", {}).get("checked_bag_clothes_kg", 15)
+        cabin_bag_capacity = self.constraints.get("clothes_allocation", {}).get("cabin_bag_clothes_kg", 3)
+
         for item in selected_items:
-            weight = self.weights.get(item['category'], 0.5)
-            category = item['category']
+            weight = self.weights.get(item.get('category'), 0.5)
             
-            # Heavy formal items → checked
-            if category in ['Suit', 'Shoes', 'Overcoat'] or weight > 0.8:
-                if checked_weight + weight <= self.constraints["clothes_allocation"]["checked_bag_clothes_kg"]:
-                    checked_items.append(item)
-                    checked_weight += weight
-                else:
-                    cabin_items.append(item)
-                    cabin_weight += weight
+            # Prioritize cabin for essentials if space allows
+            is_essential = item.get('category') in ['T-shirt', 'Polo', 'Underwear', 'Socks']
+            cabin_has_space = cabin_weight + weight <= cabin_bag_capacity
             
-            # Light essentials → cabin (for delays)
-            elif category in ['T-shirt', 'Polo'] and len(cabin_items) < 4:
-                if cabin_weight + weight <= self.constraints["clothes_allocation"]["cabin_bag_clothes_kg"]:
-                    cabin_items.append(item)
-                    cabin_weight += weight
-                else:
-                    checked_items.append(item)
-                    checked_weight += weight
-            
-            # Everything else → checked (unless cabin has space)
+            if is_essential and cabin_has_space and len(cabin_items) < 5:
+                cabin_items.append(item)
+                cabin_weight += weight
+            # Then, try to put in checked bag
+            elif checked_weight + weight <= checked_bag_capacity:
+                checked_items.append(item)
+                checked_weight += weight
+            # Fallback to cabin bag if checked bag is full but cabin has space
+            elif cabin_has_space:
+                cabin_items.append(item)
+                cabin_weight += weight
             else:
-                if checked_weight + weight <= self.constraints["clothes_allocation"]["checked_bag_clothes_kg"]:
-                    checked_items.append(item)
-                    checked_weight += weight
-                else:
-                    cabin_items.append(item)
-                    cabin_weight += weight
-        
+                logging.warning(f"Could not fit item {item.get('item', 'N/A')} in any bag (weight: {weight}kg).")
+
         return {
             "checked_bag": {
                 "items": checked_items,
                 "weight_kg": round(checked_weight, 2),
-                "space_utilization": round(checked_weight / self.constraints["clothes_allocation"]["checked_bag_clothes_kg"] * 100, 1)
+                "space_utilization": round(checked_weight / checked_bag_capacity * 100, 1) if checked_bag_capacity > 0 else 0,
             },
             "cabin_bag": {
                 "items": cabin_items,
                 "weight_kg": round(cabin_weight, 2),
-                "space_utilization": round(cabin_weight / self.constraints["clothes_allocation"]["cabin_bag_clothes_kg"] * 100, 1)
+                "space_utilization": round(cabin_weight / cabin_bag_capacity * 100, 1) if cabin_bag_capacity > 0 else 0,
             },
             "strategy_notes": [
-                "Heavy formal items in checked bag",
-                "Essential backup items in cabin",
-                "Strategic distribution for travel delays"
+                "Simplified allocation: essentials to cabin, then fill checked, then cabin for overflow."
             ]
         }
     
@@ -851,9 +842,18 @@ class TravelPackingAgent:
     
     def _assess_climate_coverage(self, selected_items: List[Dict], trip_config: Dict) -> Dict:
         """Assess climate coverage of selection with robust destination parsing."""
-        hot_weather_items = [i for i in selected_items if 'hot' in [w.lower() for w in i.get('weather', [])]]
-        cold_weather_items = [i for i in selected_items if 'cold' in [w.lower() for w in i.get('weather', [])]]
-        versatile_items = [i for i in selected_items if len(i.get('weather', [])) == 0 or len(i.get('weather', [])) >= 2]
+        hot_weather_items = [
+            item for item in selected_items
+            if any('hot' in w.lower() for w in item.get('weather', []))
+        ]
+        cold_weather_items = [
+            item for item in selected_items
+            if any('cold' in w.lower() for w in item.get('weather', []))
+        ]
+        versatile_items = [
+            item for item in selected_items
+            if len(item.get('weather', [])) == 0 or len(item.get('weather', [])) >= 2
+        ]
 
         # Determine cities from either structured or raw input
         cities: List[str] = []
@@ -870,6 +870,9 @@ class TravelPackingAgent:
         temp_range = self._calculate_temperature_range(cities)
 
         return {
+            "hot_weather_items": hot_weather_items,
+            "cold_weather_items": cold_weather_items,
+            "versatile_items_list": versatile_items,
             "hot_weather_coverage": len(hot_weather_items),
             "cold_weather_coverage": len(cold_weather_items),
             "versatile_items": len(versatile_items),
