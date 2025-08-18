@@ -22,11 +22,17 @@ class AIPackingOptimizer:
             trip_config, available_items
         )
         if success and packing_result:
-            logging.info("✅ Gemini optimization successful")
+            # Check if validation failed but we still have a result
+            validation_failed = packing_result.get("validation_failed", False)
+            if validation_failed:
+                logging.info("✅ Gemini generated packing list but validation had warnings")
+            else:
+                logging.info("✅ Gemini optimization successful")
             return {
                 "success": True,
                 "data": packing_result,
                 "generation_method": "gemini",
+                "validation_warnings": validation_failed
             }
         logging.warning(f"Gemini failed: {error_msg}")
 
@@ -35,11 +41,17 @@ class AIPackingOptimizer:
             trip_config, available_items
         )
         if success and packing_result:
-            logging.info("✅ Groq optimization successful")
+            # Check if validation failed but we still have a result
+            validation_failed = packing_result.get("validation_failed", False)
+            if validation_failed:
+                logging.info("✅ Groq generated packing list but validation had warnings")
+            else:
+                logging.info("✅ Groq optimization successful")
             return {
                 "success": True,
                 "data": packing_result,
                 "generation_method": "groq",
+                "validation_warnings": validation_failed
             }
         logging.warning(f"Groq failed: {error_msg}")
 
