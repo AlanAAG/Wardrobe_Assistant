@@ -2,7 +2,6 @@ import asyncio
 import logging
 from typing import Dict, Tuple, Optional
 
-from core.travel_logic_fallback import travel_logic_fallback
 from core.travel_packing_agent import travel_packing_agent
 
 
