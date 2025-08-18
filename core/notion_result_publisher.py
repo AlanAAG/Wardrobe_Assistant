@@ -344,12 +344,62 @@ class NotionResultPublisher:
         if climate:
             blocks.append({
                 "object": "block",
-                "type": "callout",
-                "callout": {
-                    "rich_text": [{"type": "text", "text": {"content": f"Climate Coverage Score: {climate.get('coverage_score', 0):.1f}/1.0\nHot weather items: {climate.get('hot_weather_items', 0)} | Cold weather items: {climate.get('cold_weather_items', 0)} | Versatile items: {climate.get('versatile_items', 0)}"}}],
-                    "icon": {"emoji": "🌡️"}
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": "Climate Coverage Analysis"}}]
                 }
             })
+
+            climate_adequacy = climate.get('coverage_adequacy', 'unknown')
+            blocks.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [
+                        {"type": "text", "text": {"content": "Overall Adequacy: "}, "annotations": {"bold": True}},
+                        {"type": "text", "text": {"content": climate_adequacy.replace('_', ' ').title()}}
+                    ]
+                }
+            })
+
+            hot_items = climate.get('hot_weather_items', [])
+            if hot_items:
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {"type": "text", "text": {"content": f"Hot Weather Items ({len(hot_items)}): "}, "annotations": {"bold": True}},
+                            {"type": "text", "text": {"content": ", ".join(item['item'] for item in hot_items)}}
+                        ]
+                    }
+                })
+
+            cold_items = climate.get('cold_weather_items', [])
+            if cold_items:
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {"type": "text", "text": {"content": f"Cold Weather Items ({len(cold_items)}): "}, "annotations": {"bold": True}},
+                            {"type": "text", "text": {"content": ", ".join(item['item'] for item in cold_items)}}
+                        ]
+                    }
+                })
+
+            versatile_items = climate.get('versatile_items_list', [])
+            if versatile_items:
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {"type": "text", "text": {"content": f"Versatile Items ({len(versatile_items)}): "}, "annotations": {"bold": True}},
+                            {"type": "text", "text": {"content": ", ".join(item['item'] for item in versatile_items)}}
+                        ]
+                    }
+                })
         
         # Weight efficiency and bag allocation
         blocks.append({
@@ -381,27 +431,48 @@ class NotionResultPublisher:
             checked_bag = bag_allocation.get("checked_bag", {})
             cabin_bag = bag_allocation.get("cabin_bag", {})
             
+            checked_items = checked_bag.get('items', [])
+            cabin_items = cabin_bag.get('items', [])
+
             blocks.append({
                 "object": "block",
                 "type": "paragraph",
                 "paragraph": {
                     "rich_text": [
                         {"type": "text", "text": {"content": "Checked Bag: "}, "annotations": {"bold": True}},
-                        {"type": "text", "text": {"content": f"{checked_bag.get('item_count', 0)} items, {checked_bag.get('weight_kg', 0):.1f}kg ({checked_bag.get('space_utilization', 0):.1f}% full)"}}
+                        {"type": "text", "text": {"content": f"{len(checked_items)} items, {checked_bag.get('weight_kg', 0):.1f}kg ({checked_bag.get('space_utilization', 0):.1f}% full)"}}
                     ]
                 }
             })
             
+            for item in checked_items:
+                blocks.append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": item['item']}}]
+                    }
+                })
+
             blocks.append({
                 "object": "block",
                 "type": "paragraph",
                 "paragraph": {
                     "rich_text": [
                         {"type": "text", "text": {"content": "Cabin Bag: "}, "annotations": {"bold": True}},
-                        {"type": "text", "text": {"content": f"{cabin_bag.get('item_count', 0)} items, {cabin_bag.get('weight_kg', 0):.1f}kg ({cabin_bag.get('space_utilization', 0):.1f}% full)"}}
+                        {"type": "text", "text": {"content": f"{len(cabin_items)} items, {cabin_bag.get('weight_kg', 0):.1f}kg ({cabin_bag.get('space_utilization', 0):.1f}% full)"}}
                     ]
                 }
             })
+
+            for item in cabin_items:
+                blocks.append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": item['item']}}]
+                    }
+                })
         
         # Packing guide content
         packing_guide = packing_result.get("packing_guide", {})
