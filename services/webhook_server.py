@@ -915,7 +915,7 @@ if FLASK_AVAILABLE:
             if advanced_cache:
                 try:
                     import asyncio
-                    cache_stats = asyncio.run(advanced_cache.get_stats())
+                    cache_stats = asyncio.run(advanced_cache.get_comprehensive_stats())
                     health_data["cache"] = cache_stats
                 except Exception as e:
                     health_data["cache_error"] = str(e)
