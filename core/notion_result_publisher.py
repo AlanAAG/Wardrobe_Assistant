@@ -100,6 +100,9 @@ class NotionResultPublisher:
         blocks = []
         blocks.extend(self._create_executive_summary_blocks(packing_result, trip_config))
         blocks.extend(self._create_selected_items_blocks(packing_result))
+        blocks.extend(self._create_analysis_blocks(packing_result))
+        blocks.extend(self._create_packing_guide_blocks(packing_result))
+        blocks.extend(self._create_trip_tips_blocks(packing_result))
         blocks.extend(self._create_generation_info_blocks(generation_method))
         return blocks
 
