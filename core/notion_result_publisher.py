@@ -100,6 +100,9 @@ class NotionResultPublisher:
         blocks = []
         blocks.extend(self._create_executive_summary_blocks(packing_result, trip_config))
         blocks.extend(self._create_selected_items_blocks(packing_result))
+        blocks.extend(self._create_analysis_blocks(packing_result))
+        blocks.extend(self._create_packing_guide_blocks(packing_result))
+        blocks.extend(self._create_trip_tips_blocks(packing_result))
         blocks.extend(self._create_generation_info_blocks(generation_method))
         return blocks
 
@@ -178,16 +181,30 @@ class NotionResultPublisher:
         ]
 
     def _post_blocks_in_chunks(self, page_id: str, blocks: List[Dict]) -> None:
-        """Post blocks to Notion in optimal chunks to avoid API limits."""
+        """Post blocks to Notion in optimal chunks with retry logic for conflicts."""
         chunk_size = 100
+        max_retries = 3
+        
         for i in range(0, len(blocks), chunk_size):
             chunk = blocks[i:i + chunk_size]
-            try:
-                notion.blocks.children.append(block_id=page_id, children=chunk)
-                time.sleep(0.1)
-            except Exception as e:
-                logging.error(f"Failed to post chunk {i//chunk_size + 1}: {e}")
-                raise
+            chunk_num = i//chunk_size + 1
+            
+            for attempt in range(max_retries):
+                try:
+                    notion.blocks.children.append(block_id=page_id, children=chunk)
+                    time.sleep(0.2)  # Slightly longer delay between chunks
+                    logging.debug(f"✅ Posted chunk {chunk_num} successfully")
+                    break
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if ("409" in error_str or "conflict" in error_str) and attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 1.0  # Exponential backoff: 1s, 2s, 3s
+                        logging.warning(f"⚠️  Conflict on chunk {chunk_num}, retry {attempt + 1}/{max_retries} in {wait_time}s")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logging.error(f"❌ Failed to post chunk {chunk_num} after {attempt + 1} attempts: {e}")
+                        raise
 
     async def _generate_and_post_example_outfits(self, page_id: str, packing_result: Dict, trip_config: Dict):
         """Generates and posts example outfits to the Notion page."""
@@ -252,3 +269,152 @@ class NotionResultPublisher:
                 logging.info(f"✅ Cleared {len(update_properties)} trigger fields")
         except Exception as e:
             logging.warning(f"⚠️  Could not clear trigger fields (non-critical): {e}")
+
+    def _create_analysis_blocks(self, packing_result: Dict) -> List[Dict]:
+        """Create analysis section with business readiness, climate coverage, etc."""
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "📊 Travel Analysis"}}]
+                }
+            }
+        ]
+        
+        # Business readiness
+        business = packing_result.get("business_readiness", {})
+        if business:
+            blocks.append({
+                "object": "block",
+                "type": "callout",
+                "callout": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Business Readiness Score: {business.get('readiness_score', 0):.1f}/1.0\nSuits: {business.get('suits_count', 0)} | Formal shoes: {business.get('dress_shoes_count', 0)} | Business shirts: {business.get('business_shirts_count', 0)}"}}],
+                    "icon": {"emoji": "💼"}
+                }
+            })
+        
+        # Climate coverage
+        climate = packing_result.get("climate_coverage", {})
+        if climate:
+            blocks.append({
+                "object": "block",
+                "type": "callout",
+                "callout": {
+                    "rich_text": [{"type": "text", "text": {"content": f"Climate Coverage Score: {climate.get('coverage_score', 0):.1f}/1.0\nHot weather items: {climate.get('hot_weather_items', 0)} | Cold weather items: {climate.get('cold_weather_items', 0)} | Versatile items: {climate.get('versatile_items', 0)}"}}],
+                    "icon": {"emoji": "🌡️"}
+                }
+            })
+        
+        # Weight efficiency and bag allocation
+        blocks.append({
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "rich_text": [{"type": "text", "text": {"content": f"Weight Efficiency: {packing_result.get('weight_efficiency', 0)} items/kg | Total Weight: {packing_result.get('total_weight_kg', 0)}kg"}}],
+                "icon": {"emoji": "⚖️"}
+            }
+        })
+        
+        return blocks
+    
+    def _create_packing_guide_blocks(self, packing_result: Dict) -> List[Dict]:
+        """Create packing guide section."""
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "🎒 Packing Guide"}}]
+                }
+            }
+        ]
+        
+        # Bag allocation
+        bag_allocation = packing_result.get("bag_allocation", {})
+        if bag_allocation:
+            checked_bag = bag_allocation.get("checked_bag", {})
+            cabin_bag = bag_allocation.get("cabin_bag", {})
+            
+            blocks.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [
+                        {"type": "text", "text": {"content": "**Checked Bag:** ", "annotations": {"bold": True}}},
+                        {"type": "text", "text": {"content": f"{checked_bag.get('item_count', 0)} items, {checked_bag.get('weight_kg', 0):.1f}kg ({checked_bag.get('space_utilization', 0):.1f}% full)"}}
+                    ]
+                }
+            })
+            
+            blocks.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [
+                        {"type": "text", "text": {"content": "**Cabin Bag:** ", "annotations": {"bold": True}}},
+                        {"type": "text", "text": {"content": f"{cabin_bag.get('item_count', 0)} items, {cabin_bag.get('weight_kg', 0):.1f}kg ({cabin_bag.get('space_utilization', 0):.1f}% full)"}}
+                    ]
+                }
+            })
+        
+        # Packing guide content
+        packing_guide = packing_result.get("packing_guide", {})
+        if isinstance(packing_guide, dict):
+            for guide_section, content in packing_guide.items():
+                if content and isinstance(content, str):
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {"type": "text", "text": {"content": f"**{guide_section.replace('_', ' ').title()}:** ", "annotations": {"bold": True}}},
+                                {"type": "text", "text": {"content": content}}
+                            ]
+                        }
+                    })
+        
+        return blocks
+    
+    def _create_trip_tips_blocks(self, packing_result: Dict) -> List[Dict]:
+        """Create trip tips section."""
+        blocks = [
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "💡 Trip Tips"}}]
+                }
+            }
+        ]
+        
+        trip_tips = packing_result.get("trip_tips", {})
+        if isinstance(trip_tips, dict):
+            for tip_category, tips in trip_tips.items():
+                if tips:
+                    if isinstance(tips, list):
+                        tip_text = " • ".join(str(tip) for tip in tips if tip)
+                    else:
+                        tip_text = str(tips)
+                    
+                    if tip_text:
+                        blocks.append({
+                            "object": "block",
+                            "type": "paragraph",
+                            "paragraph": {
+                                "rich_text": [
+                                    {"type": "text", "text": {"content": f"**{tip_category.replace('_', ' ').title()}:** ", "annotations": {"bold": True}}},
+                                    {"type": "text", "text": {"content": tip_text}}
+                                ]
+                            }
+                        })
+        elif isinstance(trip_tips, str) and trip_tips:
+            blocks.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [{"type": "text", "text": {"content": trip_tips}}]
+                }
+            })
+        
+        return blocks
