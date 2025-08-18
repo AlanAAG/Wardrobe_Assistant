@@ -359,38 +359,22 @@ def handle_outfit_workflow(page_id):
         logging.error(f"❌ Outfit workflow error: {e}", exc_info=True)
         return jsonify({"error": "Outfit workflow failed"}), 500
 
+# In-memory processing state tracking
+_processing_pages = set()
+
 def check_processing_state(page_id):
     """Check if the page is currently being processed to prevent infinite loops."""
-    try:
-        notion = _get_notion_client()
-        if not notion:
-            return False
-        
-        page = notion.pages.retrieve(page_id=page_id)
-        properties = page.get("properties", {})
-        
-        # Check for a Processing checkbox
-        processing_prop = properties.get("Processing", {})
-        if processing_prop.get("type") == "checkbox":
-            return processing_prop.get("checkbox", False)
-        
-        return False
-    except Exception as e:
-        logging.warning(f"Could not check processing state: {e}")
-        return False
+    return page_id in _processing_pages
 
 def set_processing_state(page_id, processing=True):
     """Set the processing state to prevent concurrent runs."""
     try:
-        notion = _get_notion_client()
-        if not notion:
-            return
-        
-        notion.pages.update(
-            page_id=page_id,
-            properties={"Processing": {"checkbox": processing}}
-        )
-        logging.info(f"✅ Set processing state to {processing} for page {page_id}")
+        if processing:
+            _processing_pages.add(page_id)
+            logging.info(f"✅ Set processing state to True for page {page_id}")
+        else:
+            _processing_pages.discard(page_id)  # discard won't error if not present
+            logging.info(f"✅ Set processing state to False for page {page_id}")
     except Exception as e:
         logging.warning(f"Could not set processing state: {e}")
 
