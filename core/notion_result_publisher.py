@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from typing import Dict, List
 
-from data.notion_utils import notion, clear_page_content
+from data.notion_utils import notion, clear_page_content, update_notion_page_status
 from data.data_manager import wardrobe_data_manager
 from core.outfit_planner_agent import outfit_planner_agent
 
@@ -23,10 +23,7 @@ class NotionResultPublisher:
         Finalizes the packing results by updating Notion.
         """
         try:
-            logging.info(f"🧳 Finalizing packing results using {generation_method}...")
-
-            # Immediately clear trigger fields to prevent re-triggering
-            await asyncio.to_thread(self._clear_travel_trigger_fields_safe, page_id)
+            logging.info(f"🧳 Finalizing packing results for page {page_id} using {generation_method}...")
 
             self._log_packing_summary(packing_result)
 
@@ -41,11 +38,16 @@ class NotionResultPublisher:
             )
             await self._generate_and_post_example_outfits(page_id, packing_result, trip_config)
 
+            # Set status to "Complete" after successfully posting all content
+            await asyncio.to_thread(update_notion_page_status, page_id, "Complete")
+
             logging.info("✅ Finalization completed successfully")
             return {"success": True}
 
         except Exception as e:
             logging.error(f"❌ Error in results finalization: {e}", exc_info=True)
+            # Set status to "Error" on failure
+            await asyncio.to_thread(update_notion_page_status, page_id, "Error")
             return {
                 "success": False,
                 "error": f"Failed to finalize outfit: {str(e)}",
@@ -284,26 +286,6 @@ class NotionResultPublisher:
                     "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": line.replace("*","").strip()}}]}
                 })
         return blocks
-
-    def _clear_travel_trigger_fields_safe(self, page_id: str) -> None:
-        """Safely clear travel trigger fields."""
-        try:
-            logging.info(f"🧳 Safely clearing travel trigger fields for page {page_id}")
-            page = notion.pages.retrieve(page_id=page_id)
-            properties = page.get("properties", {})
-            update_properties = {}
-            trigger_fields = {
-                "Generate": {"checkbox": False},
-                "Generate Travel Packing": {"checkbox": False},
-            }
-            for field_name, field_value in trigger_fields.items():
-                if field_name in properties:
-                    update_properties[field_name] = field_value
-            if update_properties:
-                notion.pages.update(page_id=page_id, properties=update_properties)
-                logging.info(f"✅ Cleared {len(update_properties)} trigger fields")
-        except Exception as e:
-            logging.warning(f"⚠️  Could not clear trigger fields (non-critical): {e}")
 
     def _create_rich_text(self, content: str, bold: bool = False) -> List[Dict]:
         """Helper to create properly formatted rich text for Notion API."""

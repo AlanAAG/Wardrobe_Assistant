@@ -236,6 +236,14 @@ def determine_workflow_type(page_id):
         parent_db_id = page.get("parent", {}).get("database_id", "").replace("-", "")
         logging.info(f"Checking parent DB ID: {parent_db_id}")
 
+        # Check for a "Status" property to prevent re-triggering completed workflows
+        status_prop = props.get("Status", {}).get("select", {})
+        current_status = status_prop.get("name") if status_prop else None
+
+        if current_status in ["In Progress", "Complete"]:
+            logging.info(f"Workflow for page {page_id} is already '{current_status}'. Skipping.")
+            return None
+
         # Dirty Clothes database workflows
         dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID", "").replace("-", "")
         if parent_db_id and parent_db_id == dirty_clothes_db_id:
@@ -255,8 +263,6 @@ def determine_workflow_type(page_id):
         for name in ["Generate", "Generate Travel Packing", "Generate Packing", "Travel Generate"]:
             if name in props and props[name].get("type") == "checkbox" and props[name].get("checkbox"):
                 logging.info(f"🧳 Travel override checkbox '{name}' detected.")
-                # Clear the checkbox immediately to prevent re-triggering
-                clear_travel_trigger_checkbox(page_id, name)
                 return "travel"
 
         # Travel auto-trigger
@@ -356,56 +362,15 @@ def handle_outfit_workflow(page_id):
         logging.error(f"❌ Outfit workflow error: {e}", exc_info=True)
         return jsonify({"error": "Outfit workflow failed"}), 500
 
-# In-memory processing state tracking
-_processing_pages = set()
-
-def check_processing_state(page_id):
-    """Check if the page is currently being processed to prevent infinite loops."""
-    return page_id in _processing_pages
-
-def set_processing_state(page_id, processing=True):
-    """Set the processing state to prevent concurrent runs."""
-    try:
-        if processing:
-            _processing_pages.add(page_id)
-            logging.info(f"✅ Set processing state to True for page {page_id}")
-        else:
-            _processing_pages.discard(page_id)  # discard won't error if not present
-            logging.info(f"✅ Set processing state to False for page {page_id}")
-    except Exception as e:
-        logging.warning(f"Could not set processing state: {e}")
-
-def clear_travel_trigger_checkbox(page_id, checkbox_name):
-    """Clear a specific travel trigger checkbox to prevent re-triggering."""
-    try:
-        notion = _get_notion_client()
-        if not notion:
-            return
-        
-        notion.pages.update(
-            page_id=page_id,
-            properties={checkbox_name: {"checkbox": False}}
-        )
-        logging.info(f"✅ Cleared trigger checkbox '{checkbox_name}' for page {page_id}")
-    except Exception as e:
-        logging.warning(f"Could not clear trigger checkbox: {e}")
 
 def handle_travel_workflow(page_id):
     """Handle travel packing workflow with infinite loop prevention"""
     try:
+        from data.notion_utils import update_notion_page_status
         logging.info(f"🧳 ENTERING handle_travel_workflow for page {page_id}")
         
-        # Check if already processing
-        if check_processing_state(page_id):
-            logging.warning(f"⚠️  Page {page_id} is already being processed. Skipping to prevent infinite loop.")
-            return jsonify({
-                "message": "Travel packing already in progress", 
-                "page_id": page_id,
-                "status": "already_processing"
-            }), 200
-        
-        # Set processing state immediately
-        set_processing_state(page_id, True)
+        # Set status to "In Progress" to lock the page from re-triggering
+        update_notion_page_status(page_id, "In Progress")
         
         # Extract travel trigger data with debugging
         logging.info(f"🧳 About to call get_travel_trigger_data")
@@ -413,7 +378,7 @@ def handle_travel_workflow(page_id):
         
         if not travel_trigger_data:
             logging.error("❌ Failed to extract travel trigger data")
-            set_processing_state(page_id, False)  # Clear processing state on error
+            update_notion_page_status(page_id, "Error")
             return jsonify({"error": "Failed to extract travel trigger data"}), 400
         
         logging.info(f"✅ Travel trigger data extracted: {travel_trigger_data}")
@@ -423,7 +388,7 @@ def handle_travel_workflow(page_id):
         travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
         
         if not travel_orchestrator:
-            set_processing_state(page_id, False)  # Clear processing state on error
+            update_notion_page_status(page_id, "Error")
             return jsonify({"error": "Travel pipeline not available"}), 500
         
         # Test orchestrator access
@@ -433,7 +398,7 @@ def handle_travel_workflow(page_id):
             logging.info(f"🧳 Orchestrator has run_travel_packing_pipeline method: {test_result}")
         except Exception as e:
             logging.error(f"❌ Orchestrator access test failed: {e}")
-            set_processing_state(page_id, False)  # Clear processing state on error
+            update_notion_page_status(page_id, "Error")
             return jsonify({"error": f"Orchestrator access failed: {str(e)}"}), 500
         
         logging.info(f"🧳 Starting async travel pipeline...")
@@ -455,7 +420,7 @@ def handle_travel_workflow(page_id):
         
     except Exception as e:
         logging.error(f"❌ Travel workflow error: {e}", exc_info=True)
-        set_processing_state(page_id, False)  # Clear processing state on error
+        update_notion_page_status(page_id, "Error")
         return jsonify({
             "error": "Travel workflow failed", 
             "details": str(e),
@@ -684,18 +649,17 @@ def run_async_travel_pipeline(travel_orchestrator, trigger_data):
             # No event loop running, safe to use asyncio.run
             result = asyncio.run(travel_orchestrator.run_travel_packing_pipeline(trigger_data))
         
-        # Clear processing state after completion
-        if page_id:
-            set_processing_state(page_id, False)
-            logging.info(f"✅ Travel pipeline completed for page {page_id}")
+        # The orchestrator is now responsible for setting the final status
+        logging.info(f"✅ Async travel pipeline function finished for page {page_id}")
         
         return result
     
     except Exception as e:
         logging.error(f"Error in async travel pipeline: {e}", exc_info=True)
-        # Clear processing state on error
+        # Set status to "Error" on failure
         if page_id:
-            set_processing_state(page_id, False)
+            from data.notion_utils import update_notion_page_status
+            update_notion_page_status(page_id, "Error")
         return {"success": False, "error": str(e)}
 
 
