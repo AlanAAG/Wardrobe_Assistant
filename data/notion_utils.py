@@ -96,7 +96,7 @@ def get_wardrobe_items(wardrobe_db_id):
         brand_name = brand_select.get("name") if brand_select else None
 
         washed_select = props.get("Washed", {}).get("select", {})
-        washed_value = washed_select.get("name") if washed_select else "Not Done"
+        washed_value = washed_select.get("name") if washed_select else "Not started"
 
         color_multi = props.get("Color", {}).get("multi_select", [])
         color_names = [c.get("name") for c in color_multi]
@@ -528,7 +528,7 @@ def create_page_in_dirty_clothes_db(item_name: str, clothing_item_id: str, outfi
         logging.info(f"Added '{item_name}' to Dirty Clothes database.")
         
         # Update the original clothing item's washed status to "not started"
-        update_clothing_washed_status(clothing_item_id, "not started")
+        update_clothing_washed_status(clothing_item_id, "Not started")
         
     except Exception as e:
         logging.error(f"Failed to create page in Dirty Clothes database: {e}")
@@ -719,7 +719,7 @@ def remove_from_dirty_clothes_and_mark_washed(dirty_item_page_id: str):
         logging.info(f"Removed page {dirty_item_page_id} from Dirty Clothes database")
         
         # Update the original clothing item's washed status to "Done"
-        update_clothing_washed_status(clothing_item_id, "washed")
+        update_clothing_washed_status(clothing_item_id, "Done")
         logging.info(f"Marked clothing item {clothing_item_id} as washed")
         
         return True

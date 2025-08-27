@@ -105,7 +105,7 @@ def test_washed_field_updates():
                 assert result is True
                 mock_get_id.assert_called_once_with("dirty_page_id")
                 mock_delete.assert_called_once_with("dirty_page_id")
-                mock_update.assert_called_once_with("clothing_item_id", "washed")
+                mock_update.assert_called_once_with("clothing_item_id", "Done")
 
 def test_wardrobe_item_validation():
     """
