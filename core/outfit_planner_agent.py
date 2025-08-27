@@ -21,18 +21,10 @@ class OutfitPlannerAgent:
         self._api_retry_attempts = api_retry_attempts
         self._api_retry_delay = api_retry_delay
 
-    async def generate_outfit(
-        self, wardrobe_items: List[Dict], weather_tag: str, desired_aesthetic: str
-    ) -> Dict:
+    async def generate_outfit(self, context: Dict) -> Dict:
         """
         Generates an outfit using the hierarchical fallback chain.
         """
-        context = {
-            "available_items": self._categorize_items(wardrobe_items),
-            "weather_condition": weather_tag,
-            "desired_aesthetic": desired_aesthetic,
-        }
-
         # 1. Try Gemini
         success, outfit, error_msg = await outfit_llm_agents.generate_outfit_with_gemini(context)
         if success and outfit:
@@ -47,7 +39,17 @@ class OutfitPlannerAgent:
 
         # 3. Fallback to rule-based logic
         logging.info("Falling back to rule-based outfit generation.")
-        outfit = build_outfit(wardrobe_items, weather_tag == "hot", desired_aesthetic)
+        wardrobe_items = [
+            item
+            for category in context["available_items"].values()
+            for item in category
+        ]
+        outfit = build_outfit(
+            wardrobe_items,
+            context["weather_condition"] == "hot",
+            context["desired_aesthetic"],
+            context["desired_color"],
+        )
         if outfit:
             return {"success": True, "outfit": outfit, "generation_method": "rule_based_fallback"}
 

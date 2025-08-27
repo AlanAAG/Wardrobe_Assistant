@@ -84,6 +84,7 @@ class WardrobeDataManager:
     def get_filtered_wardrobe_items(self,
                                    aesthetic: str = None,
                                    weather_tag: str = None,
+                                   color_tag: str = None,
                                    categories: List[str] = None,
                                    washed_only: bool = True) -> List[Dict]:
         """
@@ -93,6 +94,7 @@ class WardrobeDataManager:
         Args:
             aesthetic: Filter by aesthetic (e.g., "Minimalist", "Casual")
             weather_tag: Filter by weather ("Hot", "Cold")
+            color_tag: Filter by color
             categories: List of categories to include
             washed_only: Only include washed items
             
@@ -106,6 +108,7 @@ class WardrobeDataManager:
                 items = supabase_client.get_filtered_wardrobe_items(
                     aesthetic=aesthetic,
                     weather_tag=weather_tag,
+                    color_tag=color_tag,
                     categories=categories,
                     washed_only=washed_only
                 )
@@ -119,7 +122,7 @@ class WardrobeDataManager:
         try:
             all_items = self.get_all_wardrobe_items()  # This will use the hierarchy
             filtered_items = self._apply_local_filters(
-                all_items, aesthetic, weather_tag, categories, washed_only
+                all_items, aesthetic, weather_tag, color_tag, categories, washed_only
             )
             logging.info(f"Applied local filtering: {len(filtered_items)} items match criteria")
             return filtered_items
@@ -127,7 +130,7 @@ class WardrobeDataManager:
             logging.error(f"Local filtering failed: {e}")
             raise Exception("Unable to retrieve filtered wardrobe data")
     
-    def get_llm_optimized_context(self, aesthetic: str, weather_tag: str) -> Dict:
+    def get_llm_optimized_context(self, aesthetic: str, weather_tag: str, color_tag: str = None) -> Dict:
         """
         Get wardrobe data organized by category for optimal LLM consumption.
         Minimizes tokens while providing complete context.
@@ -135,6 +138,7 @@ class WardrobeDataManager:
         Args:
             aesthetic: Desired aesthetic style
             weather_tag: Weather condition ("Hot" or "Cold")
+            color_tag: Desired color
             
         Returns:
             Dictionary organized by clothing categories
@@ -143,25 +147,30 @@ class WardrobeDataManager:
             context = {
                 "weather_condition": weather_tag,
                 "desired_aesthetic": aesthetic,
+                "desired_color": color_tag,
                 "available_items": {
                     "tops": self.get_filtered_wardrobe_items(
                         aesthetic=aesthetic,
                         weather_tag=weather_tag,
+                        color_tag=color_tag,
                         categories=["Polo", "T-shirt", "Sport T-shirt", "Shirt"]
                     ),
                     "bottoms": self.get_filtered_wardrobe_items(
                         aesthetic=aesthetic,
                         weather_tag=weather_tag,
+                        color_tag=color_tag,
                         categories=["Cargo Pants", "Chinos", "Jeans", "Joggers", "Pants", "Shorts"]
                     ),
                     "outerwear": self.get_filtered_wardrobe_items(
                         aesthetic=aesthetic,
                         weather_tag=weather_tag,
+                        color_tag=color_tag,
                         categories=["Crewneck", "Hoodie", "Fleece", "Jacket", "Overcoat", "Overshirt", "Suit"]
                     ),
                     "footwear": self.get_filtered_wardrobe_items(
                         aesthetic=aesthetic,
                         weather_tag=weather_tag,
+                        color_tag=color_tag,
                         categories=["Shoes", "Sneakers"]
                     )
                 }
@@ -240,7 +249,7 @@ class WardrobeDataManager:
         return get_wardrobe_items(self.wardrobe_db_id)
     
     def _apply_local_filters(self, items: List[Dict], aesthetic: str, weather_tag: str, 
-                           categories: List[str], washed_only: bool) -> List[Dict]:
+                           color_tag: str, categories: List[str], washed_only: bool) -> List[Dict]:
         """Apply filtering logic locally (fallback when Supabase filtering fails)"""
         filtered = []
         
@@ -269,6 +278,12 @@ class WardrobeDataManager:
             # Category filter
             if categories and item.get('category') not in categories:
                 continue
+
+            # Color filter
+            if color_tag:
+                item_colors = [c.lower() for c in item.get('color', [])]
+                if color_tag.lower() not in item_colors:
+                    continue
             
             filtered.append(item)
         

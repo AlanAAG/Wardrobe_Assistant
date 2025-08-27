@@ -193,7 +193,7 @@ def pick_footwear(items, desired_aesthetic, base_colors):
     return pick_one(candidates)
 
 
-def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
+def build_outfit(items, hot, desired_aesthetic, desired_color=None, washed_required="Done"):
     """
     Builds a complete, color-coordinated outfit from available items.
     Now uses individual weather tags while maintaining function signature.
@@ -214,13 +214,20 @@ def build_outfit(items, hot, desired_aesthetic, washed_required="Done"):
         logging.warning(f"No items found suitable for {'hot' if hot else 'cold'} weather.")
         return []
 
-    # 2. Pick an upper body item to set the base color scheme
-    upper = pick_upper_body(weather_filtered_items, desired_aesthetic, base_colors=[])
+    # 2. Determine base colors and pick upper body
+    base_colors = []
+    if desired_color:
+        base_colors = [desired_color]
+        upper = pick_upper_body(weather_filtered_items, desired_aesthetic, base_colors=base_colors)
+    else:
+        # Pick an upper body item to set the base color scheme
+        upper = pick_upper_body(weather_filtered_items, desired_aesthetic, base_colors=[])
+        if upper:
+            base_colors = upper.get("color", [])
+
     if not upper:
         logging.warning("No upper body garment found for outfit.")
         return []
-
-    base_colors = upper.get("color", [])
 
     # 3. Pick other items that are compatible with the upper body item (all use fallback logic)
     lower = pick_lower_body(weather_filtered_items, hot, desired_aesthetic, base_colors)
