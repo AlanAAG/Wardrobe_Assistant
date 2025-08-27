@@ -6,6 +6,7 @@ from data.weather_utils import get_weather_forecast
 from core.outfit_planner_agent import outfit_planner_agent
 from data.notion_utils import (
     get_selected_aesthetic_from_output_db,
+    get_selected_color_from_output_db,
     get_output_page_id,
     post_outfit_to_notion_page,
     clear_page_content,
@@ -52,23 +53,24 @@ class OutfitPipelineOrchestrator:
         try:
             logging.info("👕 Starting daily outfit pipeline...")
 
-            # 1. Get wardrobe data
-            wardrobe_items = wardrobe_data_manager.get_all_wardrobe_items()
-            if not wardrobe_items:
-                return {"success": False, "error": "No wardrobe items available."}
+            # 1. Get user preferences from Notion
+            selected_aesthetics = get_selected_aesthetic_from_output_db(OUTPUT_DB_ID)
+            desired_aesthetic = selected_aesthetics[0] if selected_aesthetics else "Minimalist"
+            desired_color = get_selected_color_from_output_db(OUTPUT_DB_ID)
 
             # 2. Get weather forecast
             forecast = get_weather_forecast()
             weather_tag = forecast["weather_tag"]
 
-            # 3. Get user preferences
-            selected_aesthetics = get_selected_aesthetic_from_output_db(OUTPUT_DB_ID)
-            desired_aesthetic = selected_aesthetics[0] if selected_aesthetics else "Minimalist"
+            # 3. Get LLM-optimized context from data manager
+            context = wardrobe_data_manager.get_llm_optimized_context(
+                aesthetic=desired_aesthetic,
+                weather_tag=weather_tag,
+                color_tag=desired_color
+            )
 
             # 4. Generate outfit
-            result = await outfit_planner_agent.generate_outfit(
-                wardrobe_items, weather_tag, desired_aesthetic
-            )
+            result = await outfit_planner_agent.generate_outfit(context)
 
             if not result["success"]:
                 return result

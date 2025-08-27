@@ -279,6 +279,29 @@ def get_selected_aesthetic_from_output_db(output_db_id):
         logging.error(f"Failed to get selected aesthetic from output DB {output_db_id}: {e}")
         return []
 
+
+def get_selected_color_from_output_db(output_db_id):
+    """
+    Query the output database and return the selected color.
+    Returns the first selected color string or None.
+    """
+    try:
+        results = query_database(output_db_id)
+        if not results:
+            logging.warning("Output database has no pages.")
+            return None
+        page = results[0]
+        props = page.get("properties", {})
+        color_prop = props.get("Desired Color", {})
+        multi_select = color_prop.get("multi_select", [])
+        if multi_select:
+            return multi_select[0].get("name")
+        return None
+    except Exception as e:
+        logging.error(f"Failed to get selected color from output DB {output_db_id}: {e}")
+        return None
+
+
 def get_output_page_id(output_db_id):
     """
     Query output database for the single page ID inside.
