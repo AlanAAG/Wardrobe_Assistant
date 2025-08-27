@@ -680,24 +680,26 @@ def find_and_uncheck_hamper_todo_block(page_id: str) -> None:
                 logging.error(f"Error unchecking 'Send to Hamper' to-do block {block_id} on page {page_id}: {e}")
                 return
 
-def update_notion_page_status(page_id: str, status: str):
+def update_notion_page_status(page_id: str, status: str) -> bool:
     """
     Updates the 'Status' property of a Notion page.
-    Assumes the property is a 'select' type.
+    Returns True on success, False on failure.
     """
     try:
         # Check if the "Status" property exists before attempting to update
         page = notion.pages.retrieve(page_id=page_id)
         if "Status" not in page.get("properties", {}):
-            logging.warning(f"Page {page_id} does not have a 'Status' property. Skipping update.")
-            return
+            logging.error(f"Page {page_id} does not have a 'Status' property. Cannot update status.")
+            return False
 
         properties = {"Status": {"select": {"name": status}}}
         notion.pages.update(page_id=page_id, properties=properties)
         logging.info(f"✅ Updated status to '{status}' for page {page_id}")
+        return True
     except Exception as e:
         # Log with traceback for better debugging
         logging.error(f"❌ Failed to update status for page {page_id}: {e}", exc_info=True)
+        return False
 
 
 def remove_from_dirty_clothes_and_mark_washed(dirty_item_page_id: str):
