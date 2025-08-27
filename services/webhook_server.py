@@ -370,7 +370,9 @@ def handle_travel_workflow(page_id):
         logging.info(f"🧳 ENTERING handle_travel_workflow for page {page_id}")
         
         # Set status to "In Progress" to lock the page from re-triggering
-        update_notion_page_status(page_id, "In Progress")
+        if not update_notion_page_status(page_id, "In Progress"):
+            logging.error(f"CRITICAL: Failed to set 'In Progress' status for page {page_id}. Aborting.")
+            return jsonify({"error": "Failed to set 'In Progress' status, aborting to prevent loop."}), 500
         
         # Extract travel trigger data with debugging
         logging.info(f"🧳 About to call get_travel_trigger_data")
@@ -420,7 +422,7 @@ def handle_travel_workflow(page_id):
         
     except Exception as e:
         logging.error(f"❌ Travel workflow error: {e}", exc_info=True)
-        update_notion_page_status(page_id, "Error")
+        # No need to update status here, as it might be the cause of the error
         return jsonify({
             "error": "Travel workflow failed", 
             "details": str(e),
