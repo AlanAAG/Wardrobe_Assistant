@@ -45,11 +45,25 @@ async def test_finalize_packing_results_failure(notion_publisher, mocker):
     }
     trip_config = {}
 
-    with patch('core.notion_result_publisher.asyncio.to_thread', new_callable=AsyncMock) as mock_to_thread:
-        mock_to_thread.side_effect = Exception("Notion API failed")
-        result = await notion_publisher.finalize_packing_results(
-            page_id, packing_result, "gemini", trip_config
-        )
+    # Mock the specific function that is expected to fail
+    mocker.patch(
+        'core.notion_result_publisher.NotionResultPublisher._update_trip_worthy_selections',
+        new_callable=AsyncMock,
+        side_effect=Exception("Notion API failed")
+    )
 
-        assert result["success"] is False
-        assert "Failed to finalize outfit" in result["error"]
+    # Mock the status update function to verify it's called correctly
+    mock_update_status = mocker.patch(
+        'core.notion_result_publisher.update_notion_page_status',
+        new_callable=MagicMock
+    )
+
+    result = await notion_publisher.finalize_packing_results(
+        page_id, packing_result, "gemini", trip_config
+    )
+
+    assert result["success"] is False
+    assert "Failed to finalize outfit" in result["error"]
+
+    # Verify that the status was updated to "Error"
+    mock_update_status.assert_called_once_with(page_id, "Error")
