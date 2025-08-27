@@ -410,7 +410,7 @@ def handle_travel_workflow(page_id):
             "workflow": "travel",
             "status": "processing",
             "trip_type": "business_school_relocation",
-            "destinations": [d.get("city", "Unknown") for d in travel_trigger_data.get("destinations", [])],
+            "destinations": travel_trigger_data.get("destinations", []),
             "debug_info": {
                 "trigger_data_extracted": True,
                 "orchestrator_accessible": True,
