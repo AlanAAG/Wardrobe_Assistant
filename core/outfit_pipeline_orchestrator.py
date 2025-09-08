@@ -26,25 +26,21 @@ class OutfitPipelineOrchestrator:
     def __init__(self):
         pass
 
-    async def _add_outfit_to_dirty_clothes(self, page_id: str):
+    async def _add_outfit_to_dirty_clothes(self, outfit_items: list, outfit_log_id: str):
         """
         Adds worn items to the "Dirty Clothes" database.
         """
-        try:
-            logging.info("🧺 Adding worn items to dirty clothes database...")
-            checked_items = get_checked_items_from_page(page_id)
-            for item in checked_items:
-                # Add to dirty clothes DB
-                create_page_in_dirty_clothes_db(
-                    item_name=item["name"],
-                    clothing_item_id=item["id"],
-                    outfit_log_id=page_id
-                )
-                # Mark as "Not Done" in main wardrobe
-                update_wardrobe_item_status(item["id"], "Not Done")
-            logging.info(f"Added {len(checked_items)} items to dirty clothes database.")
-        except Exception as e:
-            logging.error(f"Error adding items to dirty clothes database: {e}", exc_info=True)
+        logging.info("🧺 Adding worn items to dirty clothes database...")
+        for item in outfit_items:
+            # Add to dirty clothes DB
+            create_page_in_dirty_clothes_db(
+                item_name=item["item"],
+                clothing_item_id=item["id"],
+                outfit_log_id=outfit_log_id
+            )
+            # Mark as "Not Done" in main wardrobe
+            update_wardrobe_item_status(item["id"], "Not Done")
+        logging.info(f"Added {len(outfit_items)} items to dirty clothes database.")
 
     async def run_daily_outfit_pipeline(self) -> Dict:
         """
@@ -84,7 +80,10 @@ class OutfitPipelineOrchestrator:
             post_outfit_to_notion_page(output_page_id, result["outfit"])
 
             # 6. Add worn items to dirty clothes database
-            await self._add_outfit_to_dirty_clothes(output_page_id)
+            await self._add_outfit_to_dirty_clothes(
+                outfit_items=result["outfit"],
+                outfit_log_id=output_page_id
+            )
 
             clear_trigger_fields(output_page_id)
 
