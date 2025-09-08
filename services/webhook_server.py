@@ -236,14 +236,6 @@ def determine_workflow_type(page_id):
         parent_db_id = page.get("parent", {}).get("database_id", "").replace("-", "")
         logging.info(f"Checking parent DB ID: {parent_db_id}")
 
-        # Check for a "Status" property to prevent re-triggering completed workflows
-        status_prop = props.get("Status", {}).get("select", {})
-        current_status = status_prop.get("name") if status_prop else None
-
-        if current_status in ["In Progress", "Complete"]:
-            logging.info(f"Workflow for page {page_id} is already '{current_status}'. Skipping.")
-            return None
-
         # Dirty Clothes database workflows
         dirty_clothes_db_id = os.getenv("NOTION_DIRTY_CLOTHES_DB_ID", "").replace("-", "")
         if parent_db_id and parent_db_id == dirty_clothes_db_id:
@@ -366,13 +358,7 @@ def handle_outfit_workflow(page_id):
 def handle_travel_workflow(page_id):
     """Handle travel packing workflow with infinite loop prevention"""
     try:
-        from data.notion_utils import update_notion_page_status
         logging.info(f"🧳 ENTERING handle_travel_workflow for page {page_id}")
-        
-        # Set status to "In Progress" to lock the page from re-triggering
-        if not update_notion_page_status(page_id, "In Progress"):
-            logging.error(f"CRITICAL: Failed to set 'In Progress' status for page {page_id}. Aborting.")
-            return jsonify({"error": "Failed to set 'In Progress' status, aborting to prevent loop."}), 500
         
         # Extract travel trigger data with debugging
         logging.info(f"🧳 About to call get_travel_trigger_data")
@@ -380,7 +366,6 @@ def handle_travel_workflow(page_id):
         
         if not travel_trigger_data:
             logging.error("❌ Failed to extract travel trigger data")
-            update_notion_page_status(page_id, "Error")
             return jsonify({"error": "Failed to extract travel trigger data"}), 400
         
         logging.info(f"✅ Travel trigger data extracted: {travel_trigger_data}")
@@ -390,7 +375,6 @@ def handle_travel_workflow(page_id):
         travel_orchestrator = core_functions.get('travel_pipeline_orchestrator')
         
         if not travel_orchestrator:
-            update_notion_page_status(page_id, "Error")
             return jsonify({"error": "Travel pipeline not available"}), 500
         
         # Test orchestrator access
@@ -400,7 +384,6 @@ def handle_travel_workflow(page_id):
             logging.info(f"🧳 Orchestrator has run_travel_packing_pipeline method: {test_result}")
         except Exception as e:
             logging.error(f"❌ Orchestrator access test failed: {e}")
-            update_notion_page_status(page_id, "Error")
             return jsonify({"error": f"Orchestrator access failed: {str(e)}"}), 500
         
         logging.info(f"🧳 Starting async travel pipeline...")
@@ -658,10 +641,6 @@ def run_async_travel_pipeline(travel_orchestrator, trigger_data):
     
     except Exception as e:
         logging.error(f"Error in async travel pipeline: {e}", exc_info=True)
-        # Set status to "Error" on failure
-        if page_id:
-            from data.notion_utils import update_notion_page_status
-            update_notion_page_status(page_id, "Error")
         return {"success": False, "error": str(e)}
 
 

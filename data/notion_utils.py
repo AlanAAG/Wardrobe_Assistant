@@ -680,25 +680,19 @@ def find_and_uncheck_hamper_todo_block(page_id: str) -> None:
                 logging.error(f"Error unchecking 'Send to Hamper' to-do block {block_id} on page {page_id}: {e}")
                 return
 
-def update_notion_page_status(page_id: str, status: str) -> bool:
+def update_page_checkbox(page_id: str, property_name: str, checked: bool) -> bool:
     """
-    Updates the 'Status' property of a Notion page.
+    Updates a checkbox property of a Notion page.
     Returns True on success, False on failure.
     """
     try:
-        # Check if the "Status" property exists before attempting to update
-        page = notion.pages.retrieve(page_id=page_id)
-        if "Status" not in page.get("properties", {}):
-            logging.error(f"Page {page_id} does not have a 'Status' property. Cannot update status.")
-            return False
-
-        properties = {"Status": {"select": {"name": status}}}
+        properties = {property_name: {"checkbox": checked}}
         notion.pages.update(page_id=page_id, properties=properties)
-        logging.info(f"✅ Updated status to '{status}' for page {page_id}")
+        logging.info(f"✅ Updated checkbox '{property_name}' to '{checked}' for page {page_id}")
         return True
     except Exception as e:
         # Log with traceback for better debugging
-        logging.error(f"❌ Failed to update status for page {page_id}: {e}", exc_info=True)
+        logging.error(f"❌ Failed to update checkbox for page {page_id}: {e}", exc_info=True)
         return False
 
 

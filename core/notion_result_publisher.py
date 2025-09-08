@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from typing import Dict, List
 
-from data.notion_utils import notion, clear_page_content, update_notion_page_status
+from data.notion_utils import notion, clear_page_content, update_page_checkbox
 from data.data_manager import wardrobe_data_manager
 from core.outfit_planner_agent import outfit_planner_agent
 
@@ -38,16 +38,16 @@ class NotionResultPublisher:
             )
             await self._generate_and_post_example_outfits(page_id, packing_result, trip_config)
 
-            # Set status to "Complete" after successfully posting all content
-            await asyncio.to_thread(update_notion_page_status, page_id, "Complete")
+            # Uncheck the "Generate" checkbox to indicate completion
+            await asyncio.to_thread(update_page_checkbox, page_id, "Generate", False)
 
             logging.info("✅ Finalization completed successfully")
             return {"success": True}
 
         except Exception as e:
             logging.error(f"❌ Error in results finalization: {e}", exc_info=True)
-            # Set status to "Error" on failure
-            await asyncio.to_thread(update_notion_page_status, page_id, "Error")
+            # Uncheck the "Generate" checkbox even on failure to prevent re-triggering
+            await asyncio.to_thread(update_page_checkbox, page_id, "Generate", False)
             return {
                 "success": False,
                 "error": f"Failed to finalize outfit: {str(e)}",
