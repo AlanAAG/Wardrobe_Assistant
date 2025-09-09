@@ -14,7 +14,8 @@ from data.notion_utils import (
     OUTPUT_DB_ID,
     get_checked_items_from_page,
     create_page_in_dirty_clothes_db,
-    update_wardrobe_item_status
+    update_wardrobe_item_status,
+    update_page_status,
 )
 
 
@@ -46,8 +47,12 @@ class OutfitPipelineOrchestrator:
         """
         Main pipeline execution for generating a daily outfit.
         """
+        output_page_id = get_output_page_id(OUTPUT_DB_ID)
+        if not output_page_id:
+            return {"success": False, "error": "Could not find the output page in Notion."}
         try:
             logging.info("👕 Starting daily outfit pipeline...")
+            update_page_status(output_page_id, "In Progress")
 
             # 1. Get user preferences from Notion
             selected_aesthetics = get_selected_aesthetic_from_output_db(OUTPUT_DB_ID)
@@ -69,13 +74,10 @@ class OutfitPipelineOrchestrator:
             result = await outfit_planner_agent.generate_outfit(context)
 
             if not result["success"]:
+                update_page_status(output_page_id, "Failed")
                 return result
 
             # 5. Post outfit to Notion
-            output_page_id = get_output_page_id(OUTPUT_DB_ID)
-            if not output_page_id:
-                return {"success": False, "error": "Could not find the output page in Notion."}
-
             clear_page_content(output_page_id)
             post_outfit_to_notion_page(output_page_id, result["outfit"])
 
@@ -85,13 +87,15 @@ class OutfitPipelineOrchestrator:
                 outfit_log_id=output_page_id
             )
 
-            clear_trigger_fields(output_page_id)
+            update_page_status(output_page_id, "Complete")
 
             logging.info("✅ Daily outfit pipeline completed successfully.")
             return {"success": True}
 
         except Exception as e:
             logging.error(f"❌ Critical pipeline error in daily outfit pipeline: {str(e)}", exc_info=True)
+            if output_page_id:
+                update_page_status(output_page_id, "Failed")
             return {"success": False, "error": f"Critical pipeline error: {str(e)}"}
 
 outfit_pipeline_orchestrator = OutfitPipelineOrchestrator()
