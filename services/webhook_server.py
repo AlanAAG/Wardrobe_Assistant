@@ -4,7 +4,7 @@ import asyncio
 import threading
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # Only import Flask if available
@@ -22,6 +22,10 @@ if FLASK_AVAILABLE:
     app = Flask(__name__)
 else:
     app = None
+
+# In-memory cache for webhook deduplication
+WEBHOOK_CACHE = {}
+CACHE_TTL_SECONDS = 60  # Time-to-live for cache entries
 
 # Enhanced logging configuration
 logging.basicConfig(
@@ -50,7 +54,8 @@ def check_environment_variables():
         'NOTION_WARDROBE_DB_ID': os.getenv('NOTION_WARDROBE_DB_ID'),
         'NOTION_OUTFIT_LOG_DB_ID': os.getenv('NOTION_OUTFIT_LOG_DB_ID'),
         'GEMINI_AI_API_KEY': os.getenv('GEMINI_AI_API_KEY'),
-        'GROQ_AI_API_KEY': os.getenv('GROQ_AI_API_KEY')
+        'GROQ_AI_API_KEY': os.getenv('GROQ_AI_API_KEY'),
+        'NOTION_BOT_ID': os.getenv('NOTION_BOT_ID')
     }
     
     missing_vars = [var for var, value in required_vars.items() if not value]
@@ -70,6 +75,15 @@ def _get_notion_client():
         return notion
     except ImportError as e:
         logging.error(f"Failed to import Notion client: {e}")
+        return None
+
+def _get_webhook_cache():
+    """Lazy load webhook cache to avoid circular imports."""
+    try:
+        from caching.webhook_cache import webhook_cache
+        return webhook_cache
+    except ImportError as e:
+        logging.warning(f"Webhook cache not available: {e}")
         return None
 
 def _get_core_functions():
@@ -202,9 +216,36 @@ if FLASK_AVAILABLE:
             logging.warning("Webhook missing entity.id (page_id)")
             return jsonify({"error": "Missing entity.id in webhook"}), 400
         
+        # Deduplication and bot check
+        webhook_cache = _get_webhook_cache()
+        if webhook_cache and webhook_cache.is_recently_processed(page_id):
+            return jsonify({"message": "Event recently processed, ignoring"}), 200
+
+        notion = _get_notion_client()
+        if not notion:
+            return jsonify({"error": "Notion client not available"}), 500
+
+        try:
+            page = notion.pages.retrieve(page_id=page_id)
+            last_edited_by_id = page.get("last_edited_by", {}).get("id")
+
+            # Check if the last editor was the bot
+            notion_bot_id = os.getenv("NOTION_BOT_ID")
+            if last_edited_by_id and last_edited_by_id == notion_bot_id:
+                logging.info(f"Ignoring event for page {page_id}, edited by bot.")
+                return jsonify({"message": "Event from bot, ignoring"}), 200
+
+        except Exception as e:
+            logging.error(f"Failed to retrieve page or check editor for {page_id}: {e}")
+            return jsonify({"error": "Failed to validate page"}), 500
+
         logging.info(f"🔍 Processing webhook for page: {page_id}")
         
-        workflow_type = determine_workflow_type(page_id)
+        # Add to cache *before* starting workflow
+        if webhook_cache:
+            webhook_cache.add(page_id)
+
+        workflow_type = determine_workflow_type(page_id, page)
         logging.info(f"🎯 Detected workflow type: {workflow_type}")
         
         if workflow_type == "outfit":
@@ -221,7 +262,7 @@ if FLASK_AVAILABLE:
             logging.info(f"No workflow triggered for page {page_id}")
             return jsonify({"message": "No workflow conditions met"}), 200
 
-def determine_workflow_type(page_id):
+def determine_workflow_type(page_id, page=None):
     """
     Decide which workflow to run for the given Notion page.
     """
@@ -231,7 +272,9 @@ def determine_workflow_type(page_id):
         return None
 
     try:
-        page = notion.pages.retrieve(page_id=page_id)
+        if not page:
+            page = notion.pages.retrieve(page_id=page_id)
+
         props = page.get("properties", {})
         parent_db_id = page.get("parent", {}).get("database_id", "").replace("-", "")
         logging.info(f"Checking parent DB ID: {parent_db_id}")
