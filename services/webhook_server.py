@@ -262,6 +262,12 @@ def determine_workflow_type(page_id):
         prefs_ok = _prop_nonempty(props, ["Travel Preferences", "Trip Preferences", "Preferences"])
         dates_ok = _date_present(props, ["Travel Dates", "Trip Dates", "Dates"])
         if dest_ok and prefs_ok and dates_ok:
+            # Check status to prevent infinite loops
+            status_prop = props.get("Status", {})
+            current_status = status_prop.get("select", {}).get("name")
+            if current_status in ["In Progress", "Complete"]:
+                logging.info(f"Travel workflow for page {page_id} skipped, status is '{current_status}'.")
+                return None
             logging.info("✈️ Travel auto-trigger detected.")
             return "travel"
 

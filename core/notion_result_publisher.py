@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from typing import Dict, List
 
-from data.notion_utils import notion, clear_page_content, update_page_checkbox
+from data.notion_utils import notion, clear_page_content, update_page_checkbox, update_page_status
 from data.data_manager import wardrobe_data_manager
 from core.outfit_planner_agent import outfit_planner_agent
 
@@ -41,6 +41,9 @@ class NotionResultPublisher:
             # Uncheck the "Generate" checkbox to indicate completion
             await asyncio.to_thread(update_page_checkbox, page_id, "Generate", False)
 
+            # Set status to "Complete"
+            await asyncio.to_thread(update_page_status, page_id, "Complete")
+
             logging.info("✅ Finalization completed successfully")
             return {"success": True}
 
@@ -48,6 +51,8 @@ class NotionResultPublisher:
             logging.error(f"❌ Error in results finalization: {e}", exc_info=True)
             # Uncheck the "Generate" checkbox even on failure to prevent re-triggering
             await asyncio.to_thread(update_page_checkbox, page_id, "Generate", False)
+            # Set status to "Failed"
+            await asyncio.to_thread(update_page_status, page_id, "Failed")
             return {
                 "success": False,
                 "error": f"Failed to finalize outfit: {str(e)}",

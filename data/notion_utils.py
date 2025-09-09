@@ -740,3 +740,24 @@ def get_related_wardrobe_item_id(dirty_item_page_id: str) -> str:
     except Exception as e:
         logging.error(f"Failed to get related wardrobe item ID from page {dirty_item_page_id}: {e}")
         return None
+
+
+def update_page_status(page_id: str, status: str, status_property_name: str = "Status") -> bool:
+    """
+    Updates a select property of a Notion page, typically for status tracking.
+    Returns True on success, False on failure.
+    """
+    try:
+        properties = {
+            status_property_name: {
+                "select": {
+                    "name": status
+                }
+            }
+        }
+        notion.pages.update(page_id=page_id, properties=properties)
+        logging.info(f"✅ Updated '{status_property_name}' to '{status}' for page {page_id}")
+        return True
+    except Exception as e:
+        logging.error(f"❌ Failed to update status for page {page_id}: {e}", exc_info=True)
+        return False
