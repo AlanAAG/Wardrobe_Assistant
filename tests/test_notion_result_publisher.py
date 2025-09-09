@@ -54,7 +54,7 @@ async def test_finalize_packing_results_failure(notion_publisher, mocker):
 
     # Mock the status update function to verify it's called correctly
     mock_update_status = mocker.patch(
-        'core.notion_result_publisher.update_notion_page_status',
+        'core.notion_result_publisher.update_page_status',
         new_callable=MagicMock
     )
 
@@ -65,5 +65,5 @@ async def test_finalize_packing_results_failure(notion_publisher, mocker):
     assert result["success"] is False
     assert "Failed to finalize outfit" in result["error"]
 
-    # Verify that the status was updated to "Error"
-    mock_update_status.assert_called_once_with(page_id, "Error")
+    # Verify that the status was updated to "Failed"
+    mock_update_status.assert_called_once_with(page_id, "Failed")

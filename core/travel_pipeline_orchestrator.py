@@ -10,7 +10,7 @@ from core.trip_configurator import TripConfigurator
 from core.ai_packing_optimizer import AIPackingOptimizer
 from core.notion_result_publisher import NotionResultPublisher
 from data.data_manager import wardrobe_data_manager
-from data.notion_utils import notion
+from data.notion_utils import notion, update_page_status
 from core.utils import categorize_items_by_category
 
 load_dotenv()
@@ -68,6 +68,12 @@ class TravelPipelineOrchestrator:
             trip_config = trip_configurator.prepare_trip_configuration()
             if not trip_config:
                 return self._create_error_result("Invalid trip configuration", pipeline_start)
+
+            # Immediately update status to "In Progress" to prevent re-triggering
+            page_id = trigger_data.get("page_id")
+            if page_id:
+                logging.info(f"Updating page {page_id} status to 'In Progress'")
+                await asyncio.to_thread(update_page_status, page_id, "In Progress")
 
             # 2. Get wardrobe data
             available_items = await self._get_travel_optimized_wardrobe_data()
