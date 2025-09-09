@@ -11,8 +11,8 @@ def mock_add_to_db(mocker):
     return mocker.patch('core.hamper_pipeline_orchestrator.add_items_to_dirty_clothes_db')
 
 @pytest.fixture
-def mock_uncheck_trigger(mocker):
-    return mocker.patch('core.hamper_pipeline_orchestrator.uncheck_hamper_trigger')
+def mock_update_page_status(mocker):
+    return mocker.patch('core.hamper_pipeline_orchestrator.update_page_status')
 
 @pytest.fixture
 def mock_update_washed_status(mocker):
@@ -23,7 +23,7 @@ def hamper_orchestrator():
     return HamperPipelineOrchestrator()
 
 @pytest.mark.asyncio
-async def test_run_hamper_pipeline_success(hamper_orchestrator, mock_get_checked_items, mock_add_to_db, mock_uncheck_trigger):
+async def test_run_hamper_pipeline_success(hamper_orchestrator, mock_get_checked_items, mock_add_to_db, mock_update_page_status):
     """
     Tests that the hamper pipeline runs successfully.
     """
@@ -35,10 +35,13 @@ async def test_run_hamper_pipeline_success(hamper_orchestrator, mock_get_checked
     assert result["processed_items"] == 1
     mock_get_checked_items.assert_called_once_with(page_id)
     mock_add_to_db.assert_called_once_with([{"id": "item1", "name": "T-shirt"}], page_id)
-    mock_uncheck_trigger.assert_called_once_with(page_id)
+    mock_update_page_status.assert_has_calls([
+        call(page_id, "In Progress"),
+        call(page_id, "Complete")
+    ])
 
 @pytest.mark.asyncio
-async def test_run_hamper_pipeline_no_items(hamper_orchestrator, mock_get_checked_items, mock_add_to_db, mock_uncheck_trigger):
+async def test_run_hamper_pipeline_no_items(hamper_orchestrator, mock_get_checked_items, mock_add_to_db, mock_update_page_status):
     """
     Tests that the hamper pipeline handles the case where there are no valid items to process.
     """
@@ -51,10 +54,13 @@ async def test_run_hamper_pipeline_no_items(hamper_orchestrator, mock_get_checke
     assert result["message"] == "No valid wardrobe items to send to hamper."
     mock_get_checked_items.assert_called_once_with(page_id)
     mock_add_to_db.assert_not_called()
-    mock_uncheck_trigger.assert_called_once_with(page_id)
+    mock_update_page_status.assert_has_calls([
+        call(page_id, "In Progress"),
+        call(page_id, "Complete")
+    ])
 
 @pytest.mark.asyncio
-async def test_run_hamper_pipeline_error(hamper_orchestrator, mock_get_checked_items, mock_add_to_db, mock_uncheck_trigger):
+async def test_run_hamper_pipeline_error(hamper_orchestrator, mock_get_checked_items, mock_add_to_db, mock_update_page_status):
     """
     Tests that the hamper pipeline handles errors gracefully.
     """
@@ -67,7 +73,10 @@ async def test_run_hamper_pipeline_error(hamper_orchestrator, mock_get_checked_i
     assert "Test error" in result["error"]
     mock_get_checked_items.assert_called_once_with(page_id)
     mock_add_to_db.assert_not_called()
-    mock_uncheck_trigger.assert_called_once_with(page_id)
+    mock_update_page_status.assert_has_calls([
+        call(page_id, "In Progress"),
+        call(page_id, "Failed")
+    ])
 
 @pytest.mark.asyncio 
 async def test_dirty_clothes_workflow_integration():

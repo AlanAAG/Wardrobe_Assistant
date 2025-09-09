@@ -279,6 +279,11 @@ def determine_workflow_type(page_id):
             t.get("plain_text", "").strip() for t in prompt_prop.get("rich_text", [])
         )
         if has_aesthetic and has_prompt:
+            status_prop = props.get("Status", {})
+            current_status = status_prop.get("select", {}).get("name")
+            if current_status in ["In Progress", "Complete"]:
+                logging.info(f"Outfit workflow for page {page_id} skipped, status is '{current_status}'.")
+                return None
             logging.info("👕 Outfit trigger detected.")
             return "outfit"
 
@@ -297,6 +302,11 @@ def determine_workflow_type(page_id):
                 logging.error(f"Error checking hamper to-do block: {e}")
             logging.info(f"Hamper property checked={prop_checked}, hamper to-do checked={has_checked_block}")
             if prop_checked or has_checked_block:
+                status_prop = props.get("Status", {})
+                current_status = status_prop.get("select", {}).get("name")
+                if current_status in ["In Progress", "Complete"]:
+                    logging.info(f"Hamper workflow for page {page_id} skipped, status is '{current_status}'.")
+                    return None
                 logging.info("🧺 Hamper trigger detected.")
                 return "hamper"
 
