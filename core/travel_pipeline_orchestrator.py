@@ -10,7 +10,7 @@ from core.trip_configurator import TripConfigurator
 from core.ai_packing_optimizer import AIPackingOptimizer
 from core.notion_result_publisher import NotionResultPublisher
 from data.data_manager import wardrobe_data_manager
-from data.notion_utils import notion, update_page_status
+from data.notion_utils import notion, update_page_status, update_page_checkbox
 from core.utils import categorize_items_by_category
 
 load_dotenv()
@@ -74,6 +74,8 @@ class TravelPipelineOrchestrator:
             if page_id:
                 logging.info(f"Updating page {page_id} status to 'In Progress'")
                 await asyncio.to_thread(update_page_status, page_id, "In Progress")
+                for checkbox_name in ["Generate", "Generate Travel Packing", "Generate Packing", "Travel Generate"]:
+                    await asyncio.to_thread(update_page_checkbox, page_id, checkbox_name, False)
 
             # 2. Get wardrobe data
             available_items = await self._get_travel_optimized_wardrobe_data()

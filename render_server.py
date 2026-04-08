@@ -10,26 +10,26 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # --- Application Entry Point ---
-# We explicitly import the app object AFTER setting up the environment.
-# This is the key to solving the startup issue.
+# Explicitly import the FastAPI app object
 try:
-    from asgiref.wsgi import WsgiToAsgi
-    from services.webhook_server import app as flask_app
-    app = WsgiToAsgi(flask_app)
-    
+    from services.webhook_server import app
+
     # Configure logging for production
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         stream=sys.stdout
     )
-    logging.info("Server entry point initialized successfully.")
+    logging.info("FastAPI server entry point initialized successfully.")
 
 except ImportError as e:
-    logging.critical(f"Failed to import Flask app: {e}")
-    # If the app can't be imported, we create a dummy one to prevent Render from crashing on startup
-    from flask import Flask, jsonify
-    app = Flask(__name__)
-    @app.route('/health')
-    def health_check_error():
-        return jsonify({"status": "error", "message": "Application failed to start. Check logs."}), 500
+    logging.critical(f"Failed to import FastAPI app: {e}")
+    # Fallback to a dummy FastAPI app to prevent Render from crashing
+    try:
+        from fastapi import FastAPI
+        app = FastAPI()
+        @app.get('/health')
+        async def health_check_error():
+            return {"status": "error", "message": "Application failed to start. Check logs."}
+    except ImportError:
+        pass

@@ -258,39 +258,30 @@ def post_outfit_to_notion_page(page_id, outfit_items):
     except Exception as e:
         logging.error(f"Failed to post outfit to Notion page: {e}")
 
-def get_selected_aesthetic_from_output_db(output_db_id):
+def get_selected_aesthetic_for_page(page_id):
     """
-    Query the output database (should contain one page)
-    and return the list of selected aesthetics (multi-select).
+    Get the list of selected aesthetics (multi-select) for a specific page.
     Returns a list of strings or empty list.
     """
     try:
-        results = query_database(output_db_id)
-        if not results:
-            logging.warning("Output database has no pages.")
-            return []
-        page = results[0]
+        page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
         aesthetic_prop = props.get("Desired Aesthetic", {})
         multi_select = aesthetic_prop.get("multi_select", [])
         selected = [tag.get("name") for tag in multi_select]
         return selected
     except Exception as e:
-        logging.error(f"Failed to get selected aesthetic from output DB {output_db_id}: {e}")
+        logging.error(f"Failed to get selected aesthetic for page {page_id}: {e}")
         return []
 
 
-def get_selected_color_from_output_db(output_db_id):
+def get_selected_color_for_page(page_id):
     """
-    Query the output database and return the selected color.
+    Get the selected color for a specific page.
     Returns the first selected color string or None.
     """
     try:
-        results = query_database(output_db_id)
-        if not results:
-            logging.warning("Output database has no pages.")
-            return None
-        page = results[0]
+        page = notion.pages.retrieve(page_id=page_id)
         props = page.get("properties", {})
         color_prop = props.get("Desired Color", {})
         multi_select = color_prop.get("multi_select", [])
@@ -298,7 +289,7 @@ def get_selected_color_from_output_db(output_db_id):
             return multi_select[0].get("name")
         return None
     except Exception as e:
-        logging.error(f"Failed to get selected color from output DB {output_db_id}: {e}")
+        logging.error(f"Failed to get selected color for page {page_id}: {e}")
         return None
 
 

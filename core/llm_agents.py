@@ -14,6 +14,7 @@ class OutfitLLMAgents:
     """
     Async LLM agents for outfit creation with hierarchical fallback:
     Gemini API -> Groq API -> Logic Engine -> Error
+    Using Structured Outputs (JSON Schema).
     """
     
     def __init__(self):
@@ -36,36 +37,31 @@ class OutfitLLMAgents:
     
     async def generate_outfit_with_gemini(self, context: Dict, timeout: int = 25) -> Tuple[bool, Optional[List[Dict]], Optional[str]]:
         """
-        Primary agent: Generate outfit using Gemini API with timeout
-        
-        Args:
-            context: Dictionary with wardrobe items, weather, aesthetic, and user prompt
-            timeout: Timeout in seconds for the API call
-            
-        Returns:
-            Tuple of (success: bool, outfit_items: List[Dict], error_message: str)
+        Primary agent: Generate outfit using Gemini API with timeout using JSON schema.
         """
         if not self.gemini_model:
             return False, None, "Gemini API not configured"
         
         try:
-            # Prepare the specialized service prompt
-            service_prompt = self._build_gemini_service_prompt(context)
+            service_prompt = self._build_service_prompt(context)
             
-            # Run with timeout
+            # Using JSON response format for Gemini
+            generation_config = genai.types.GenerationConfig(
+                response_mime_type="application/json",
+            )
+            
             response = await asyncio.wait_for(
-                asyncio.to_thread(self.gemini_model.generate_content, service_prompt),
+                asyncio.to_thread(self.gemini_model.generate_content, service_prompt, generation_config=generation_config),
                 timeout=timeout
             )
             
             if not response.text:
                 return False, None, "Gemini returned empty response"
             
-            # Parse the response to extract outfit items
-            outfit_items = self._parse_llm_response(response.text, context["available_items"])
+            outfit_items = self._parse_json_response(response.text, context["available_items"])
             
             if not outfit_items:
-                return False, None, "Gemini could not generate valid outfit"
+                return False, None, "Gemini could not generate valid outfit from JSON string"
             
             logging.info(f"Gemini successfully generated outfit with {len(outfit_items)} items")
             return True, outfit_items, None
@@ -81,34 +77,26 @@ class OutfitLLMAgents:
     
     async def generate_outfit_with_groq(self, context: Dict, timeout: int = 20) -> Tuple[bool, Optional[List[Dict]], Optional[str]]:
         """
-        Secondary agent: Generate outfit using Groq API with timeout
-        
-        Args:
-            context: Dictionary with wardrobe items, weather, aesthetic, and user prompt
-            timeout: Timeout in seconds for the API call
-            
-        Returns:
-            Tuple of (success: bool, outfit_items: List[Dict], error_message: str)
+        Secondary agent: Generate outfit using Groq API with timeout using JSON schema.
         """
         if not self.groq_client:
             return False, None, "Groq API not configured"
         
         try:
-            # Prepare the specialized service prompt
-            service_prompt = self._build_groq_service_prompt(context)
+            service_prompt = self._build_service_prompt(context)
             
-            # Generate response using Groq with timeout
             chat_completion = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.groq_client.chat.completions.create,
                     messages=[
-                        {"role": "system", "content": self._get_groq_system_prompt()},
+                        {"role": "system", "content": self._get_system_prompt()},
                         {"role": "user", "content": service_prompt}
                     ],
-                    model="llama3-8b-8192",  # Fast, reliable model
-                    temperature=0.3,  # Lower temperature for more consistent results
+                    model="llama3-8b-8192",
+                    temperature=0.3,
                     max_tokens=1000,
-                    top_p=0.9
+                    top_p=0.9,
+                    response_format={"type": "json_object"}
                 ),
                 timeout=timeout
             )
@@ -118,11 +106,10 @@ class OutfitLLMAgents:
             if not response_text:
                 return False, None, "Groq returned empty response"
             
-            # Parse the response to extract outfit items
-            outfit_items = self._parse_llm_response(response_text, context["available_items"])
+            outfit_items = self._parse_json_response(response_text, context["available_items"])
             
             if not outfit_items:
-                return False, None, "Groq could not generate valid outfit"
+                return False, None, "Groq could not generate valid outfit from JSON string"
             
             logging.info(f"Groq successfully generated outfit with {len(outfit_items)} items")
             return True, outfit_items, None
@@ -135,63 +122,9 @@ class OutfitLLMAgents:
             error_msg = f"Groq API error: {str(e)}"
             logging.error(error_msg)
             return False, None, error_msg
-    
-    def _build_gemini_service_prompt(self, context: Dict) -> str:
-        """Build specialized service prompt for Gemini"""
-        weather_condition = context["weather_condition"]
-        desired_aesthetic = context["desired_aesthetic"]
-        user_prompt = context.get("user_prompt", "")
-        available_items = context["available_items"]
-        
-        # Count total items for context
-        total_items = sum(len(items) for items in available_items.values())
-        
-        prompt = f"""You are a professional fashion stylist AI specialized in creating weather-appropriate, aesthetically coherent outfits.
 
-**CRITICAL CONSTRAINTS - MUST FOLLOW:**
-1. Weather: {weather_condition} - Only select items suitable for this weather
-2. Aesthetic: {desired_aesthetic} - All items must match this aesthetic style
-3. Color Coordination: Ensure all selected items work together colorwise
-4. User Request: "{user_prompt}" - Interpret and fulfill this specific request
-5. Completeness: Must include TOP, BOTTOM, FOOTWEAR (and OUTERWEAR if cold weather)
-
-**AVAILABLE WARDROBE ({total_items} items total):**
-
-**TOPS ({len(available_items.get('tops', []))} available):**
-{self._format_items_for_prompt(available_items.get('tops', []))}
-
-**BOTTOMS ({len(available_items.get('bottoms', []))} available):**
-{self._format_items_for_prompt(available_items.get('bottoms', []))}
-
-**OUTERWEAR ({len(available_items.get('outerwear', []))} available):**
-{self._format_items_for_prompt(available_items.get('outerwear', []))}
-
-**FOOTWEAR ({len(available_items.get('footwear', []))} available):**
-{self._format_items_for_prompt(available_items.get('footwear', []))}
-
-**INSTRUCTIONS:**
-1. Analyze the user prompt: "{user_prompt}"
-2. Consider the {weather_condition} weather conditions
-3. Select items that match the {desired_aesthetic} aesthetic
-4. Ensure color harmony between all selected pieces
-5. Provide exactly one item from each required category
-
-**OUTPUT FORMAT (CRITICAL - Follow exactly):**
-SELECTED_OUTFIT:
-TOP: [exact item name from tops list]
-BOTTOM: [exact item name from bottoms list]
-FOOTWEAR: [exact item name from footwear list]
-OUTERWEAR: [exact item name from outerwear list - only if cold weather]
-
-REASONING:
-[Brief explanation of your choices considering weather, aesthetic, colors, and user request]
-
-Remember: You MUST select items only from the provided lists above. Use exact item names."""
-
-        return prompt
-    
-    def _get_groq_system_prompt(self) -> str:
-        """System prompt for Groq chat completion"""
+    def _get_system_prompt(self) -> str:
+        """System prompt for Groq/Gemini chat completion"""
         return """You are a professional fashion stylist AI specialized in creating weather-appropriate, aesthetically coherent outfits. You analyze user requests, weather conditions, and available wardrobe items to create perfect outfit combinations.
 
 Key principles:
@@ -199,19 +132,19 @@ Key principles:
 - Color coordination is essential
 - Aesthetic consistency must be maintained
 - All selections must come from provided available items only
-- Provide clear, actionable recommendations"""
+- Provide clear, actionable recommendations
+- You MUST return a pure JSON object mapping strictly to the item IDs provided."""
     
-    def _build_groq_service_prompt(self, context: Dict) -> str:
-        """Build specialized service prompt for Groq"""
+    def _build_service_prompt(self, context: Dict) -> str:
+        """Build specialized service prompt expecting JSON"""
         weather_condition = context["weather_condition"]
         desired_aesthetic = context["desired_aesthetic"]
         user_prompt = context.get("user_prompt", "")
         available_items = context["available_items"]
         
-        # Count total items for context
         total_items = sum(len(items) for items in available_items.values())
         
-        prompt = f"""OUTFIT CREATION REQUEST
+        prompt = f"""You are a professional fashion stylist AI specialized in creating weather-appropriate, aesthetically coherent outfits.
 
 **REQUIREMENTS:**
 - Weather: {weather_condition}
@@ -219,7 +152,7 @@ Key principles:
 - Request: "{user_prompt}"
 - Must be color coordinated and weather appropriate
 
-**AVAILABLE ITEMS ({total_items} total):**
+**AVAILABLE ITEMS BY ID ({total_items} total):**
 
 **TOPS:**
 {self._format_items_for_prompt(available_items.get('tops', []))}
@@ -233,31 +166,34 @@ Key principles:
 **FOOTWEAR:**
 {self._format_items_for_prompt(available_items.get('footwear', []))}
 
-Select one item from each category (outerwear only if cold). Use exact item names.
+**OUTPUT FORMAT (CRITICAL - Follow exactly):**
+You MUST return a raw JSON object string of the following schema, and NOTHING ELSE. Choose exactly one item ID from each required category (outerwear only if cold).
 
-FORMAT YOUR RESPONSE AS:
-SELECTED_OUTFIT:
-TOP: [exact item name]
-BOTTOM: [exact item name]
-FOOTWEAR: [exact item name]
-OUTERWEAR: [exact item name - if needed]
-
-REASONING: [Brief explanation]"""
-
+{{
+  "selected_ids": [
+    "exact-id-from-tops",
+    "exact-id-from-bottoms",
+    "exact-id-from-footwear",
+    "exact-id-from-outerwear-if-needed"
+  ],
+  "reasoning": "Brief explanation of choices."
+}}"""
         return prompt
     
     def _format_items_for_prompt(self, items: List[Dict]) -> str:
-        """Format wardrobe items for LLM prompt"""
+        """Format wardrobe items with their IDs for LLM prompt"""
         if not items:
             return "None available"
         
         formatted = []
         for item in items:
+            # Assume 'id' exists. If not, use 'item' as ID as fallback, but typically DB items have an ID.
+            item_id = item.get('id', item.get('item', 'unknown_id'))
             colors = ", ".join(item.get('color', []))
             aesthetics = ", ".join(item.get('aesthetic', []))
             weather_tags = ", ".join(item.get('weather', []))
             
-            item_info = f"- {item['item']} ({item['category']})"
+            item_info = f"- ID: '{item_id}' | Name: {item['item']} ({item['category']})"
             if colors:
                 item_info += f" | Colors: {colors}"
             if aesthetics:
@@ -269,107 +205,38 @@ REASONING: [Brief explanation]"""
         
         return "\n".join(formatted)
 
-    def _parse_llm_response(self, response_text: str, available_items: Dict) -> Optional[List[Dict]]:
+    def _parse_json_response(self, response_text: str, available_items: Dict) -> Optional[List[Dict]]:
         """
-        Parse LLM response to extract selected outfit items with smart name + category matching
-        
-        Args:
-            response_text: Raw LLM response
-            available_items: Dictionary of available items by category
-            
-        Returns:
-            List of selected item dictionaries or None if parsing fails
+        Parse LLM JSON response to extract selected outfit items based entirely on IDs.
+        No regex or fuzzy matching needed.
         """
         try:
-            import re
-            selected_items = []
+            # Clean up potential markdown blocks if LLM still returned them
+            if response_text.startswith("```json"):
+                response_text = response_text[7:-3].strip()
+            elif response_text.startswith("```"):
+                response_text = response_text[3:-3].strip()
+
+            parsed = json.loads(response_text)
+            selected_ids = parsed.get("selected_ids", [])
             
-            # Create lookup dictionaries for efficient searching
-            # Group by category for category-specific lookups
-            items_by_category = {}
+            if not selected_ids:
+                logging.error("No selected_ids found in JSON response")
+                return None
+            
+            # Map IDs back to full item objects
             all_items_lookup = {}
-            
             for category, items in available_items.items():
                 for item in items:
-                    item_name = item['item'].lower().strip()
-                    item_category = item['category']
-                    
-                    # Add to category-specific lookup
-                    if item_category not in items_by_category:
-                        items_by_category[item_category] = {}
-                    items_by_category[item_category][item_name] = item
-                    
-                    # Add to global lookup as backup
-                    all_items_lookup[item_name] = item
-            
-            # Extract outfit section
-            if "SELECTED_OUTFIT:" in response_text:
-                outfit_section = response_text.split("SELECTED_OUTFIT:")[1]
-                if "REASONING:" in outfit_section:
-                    outfit_section = outfit_section.split("REASONING:")[0]
-                
-                lines = outfit_section.strip().split('\n')
-                
-                for line in lines:
-                    line = line.strip()
-                    if ':' in line:
-                        category_type, item_selection = line.split(':', 1)
-                        category_type = category_type.strip().upper()
-                        item_selection = item_selection.strip()
-                        
-                        # Parse item selection using regex to extract name and category
-                        # Handles formats like: "Black Slim Pants (Chinos)" or just "Black Slim Pants"
-                        match = re.match(r'^(.+?)\s*\(([^)]+)\)$', item_selection)
-                        
-                        if match:
-                            # Format: "Item Name (Category)"
-                            item_name = match.group(1).strip()
-                            expected_category = match.group(2).strip()
-                            
-                            # Try category-specific lookup first (most accurate)
-                            item_name_lower = item_name.lower()
-                            if expected_category in items_by_category:
-                                if item_name_lower in items_by_category[expected_category]:
-                                    found_item = items_by_category[expected_category][item_name_lower]
-                                    selected_items.append(found_item)
-                                    logging.info(f"Selected {category_type}: {item_name} ({expected_category}) ✅")
-                                    continue
-                            
-                            # Fallback: Try fuzzy matching within the expected category
-                            if expected_category in items_by_category:
-                                fuzzy_match = self._fuzzy_match_item(item_name_lower, items_by_category[expected_category])
-                                if fuzzy_match:
-                                    selected_items.append(fuzzy_match)
-                                    logging.info(f"Selected {category_type}: {item_name} ({expected_category}) ✅ (fuzzy match)")
-                                    continue
-                            
-                            # Last resort: Global lookup (without category validation)
-                            if item_name_lower in all_items_lookup:
-                                found_item = all_items_lookup[item_name_lower]
-                                selected_items.append(found_item)
-                                logging.warning(f"Selected {category_type}: {item_name} ⚠️  (category mismatch: expected {expected_category}, got {found_item['category']})")
-                                continue
-                            
-                            logging.warning(f"Could not find item: {item_name} ({expected_category})")
-                        
-                        else:
-                            # Format: "Item Name" (no category specified)
-                            item_name = item_selection
-                            item_name_lower = item_name.lower().strip()
-                            
-                            # Try global lookup
-                            if item_name_lower in all_items_lookup:
-                                found_item = all_items_lookup[item_name_lower]
-                                selected_items.append(found_item)
-                                logging.info(f"Selected {category_type}: {item_name} ✅")
-                            else:
-                                # Try fuzzy matching across all items
-                                fuzzy_match = self._fuzzy_match_item(item_name_lower, all_items_lookup)
-                                if fuzzy_match:
-                                    selected_items.append(fuzzy_match)
-                                    logging.info(f"Selected {category_type}: {item_name} ✅ (fuzzy match)")
-                                else:
-                                    logging.warning(f"Could not find item: {item_name}")
+                    item_id = item.get('id', item.get('item', 'unknown_id'))
+                    all_items_lookup[item_id] = item
+
+            selected_items = []
+            for item_id in selected_ids:
+                if item_id in all_items_lookup:
+                    selected_items.append(all_items_lookup[item_id])
+                else:
+                    logging.warning(f"Returned ID {item_id} not found in available items.")
             
             # Validate outfit completeness
             if not self._validate_outfit_completeness(selected_items):
@@ -377,58 +244,19 @@ REASONING: [Brief explanation]"""
             
             return selected_items if selected_items else None
             
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to decode JSON from LLM: {e}\nResponse: {response_text}")
+            return None
         except Exception as e:
             logging.error(f"Error parsing LLM response: {e}")
             return None
 
-    def _fuzzy_match_item(self, target_name: str, items_dict: Dict) -> Optional[Dict]:
-        """
-        Attempt fuzzy matching for item names to handle slight variations
-        
-        Args:
-            target_name: The item name to search for (lowercase)
-            items_dict: Dictionary of {item_name: item_data}
-            
-        Returns:
-            Matching item dictionary or None
-        """
-        # Try partial matching (target is contained in item name or vice versa)
-        for item_name, item_data in items_dict.items():
-            # Check if names contain each other (handles variations like "Light Blue" vs "LightBlue")
-            if target_name in item_name or item_name in target_name:
-                if abs(len(target_name) - len(item_name)) <= 3:  # Allow small length differences
-                    return item_data
-        
-        # Try word-based matching (split by spaces and check overlap)
-        target_words = set(target_name.split())
-        for item_name, item_data in items_dict.items():
-            item_words = set(item_name.split())
-            
-            # If most words match, consider it a match
-            if target_words and item_words:
-                overlap = len(target_words.intersection(item_words))
-                min_words = min(len(target_words), len(item_words))
-                
-                # Require at least 70% word overlap
-                if overlap / min_words >= 0.7:
-                    return item_data
-        
-        return None
-
     def _validate_outfit_completeness(self, selected_items: List[Dict]) -> bool:
         """
         Validate that the outfit has the required pieces
-        
-        Args:
-            selected_items: List of selected item dictionaries
-            
-        Returns:
-            True if outfit is complete, False otherwise
         """
         categories = {item['category'] for item in selected_items}
         
-        # Required categories
-        # Required categories are now based on the centralized definitions
         has_top = bool(categories.intersection(UPPER_BODY))
         has_bottom = bool(categories.intersection(LOWER_BODY_HOT))
         has_footwear = bool(categories.intersection(FOOTWEAR))
@@ -440,5 +268,4 @@ REASONING: [Brief explanation]"""
         
         return True
 
-# Create global instance
 outfit_llm_agents = OutfitLLMAgents()

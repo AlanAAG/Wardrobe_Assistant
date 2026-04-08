@@ -1,77 +1,45 @@
-import time
+import os
 import logging
-from collections import OrderedDict
+from redis import asyncio as aioredis
 
 class WebhookCache:
     """
-    A simple in-memory cache to deduplicate recent webhook events.
+    A Redis-backed cache to deduplicate recent webhook events.
     This helps prevent processing the same event multiple times in quick succession.
     """
     def __init__(self, ttl_seconds=60):
-        """
-        Initializes the cache.
-
-        Args:
-            ttl_seconds (int): Time-to-live for cache entries in seconds.
-                               An entry is considered stale after this duration.
-        """
-        self._cache = OrderedDict()
         self._ttl = ttl_seconds
-        logging.info(f"WebhookCache initialized with TTL: {self._ttl} seconds.")
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        # decode_responses=True ensures we get strings back, not bytes
+        self.redis = aioredis.from_url(redis_url, decode_responses=True)
+        logging.info(f"WebhookCache initialized with Redis TTL: {self._ttl} seconds. URL: {redis_url}")
 
-    def is_recently_processed(self, page_id: str) -> bool:
+    async def is_recently_processed(self, page_id: str) -> bool:
         """
         Checks if a page_id has been processed within the TTL period.
-
-        This method is thread-safe for checking and updating the cache.
-
-        Args:
-            page_id (str): The Notion page ID to check.
-
-        Returns:
-            bool: True if the page_id is in the cache and not stale, False otherwise.
         """
-        if page_id not in self._cache:
+        try:
+            cache_key = f"webhook_cache:{page_id}"
+            exists = await self.redis.exists(cache_key)
+            if exists:
+                logging.info(f"Page {page_id} was recently processed. Ignoring.")
+                return True
+            return False
+        except Exception as e:
+            logging.error(f"Redis cache check failed: {e}")
+            # If Redis fails, we default to False to process the webhook anyway
             return False
 
-        # Check if the cached entry is stale
-        if time.time() - self._cache[page_id] > self._ttl:
-            # Entry is stale, remove it
-            del self._cache[page_id]
-            return False
-
-        # Entry is recent
-        logging.info(f"Page {page_id} was recently processed. Ignoring.")
-        return True
-
-    def add(self, page_id: str):
+    async def add(self, page_id: str):
         """
-        Adds a page_id to the cache with the current timestamp.
-
-        This method is thread-safe for adding entries.
-
-        Args:
-            page_id (str): The Notion page ID to add.
+        Adds a page_id to the cache with SETEX.
         """
-        self._cache[page_id] = time.time()
-        logging.info(f"Page {page_id} added to webhook cache.")
-        self._cleanup()
-
-    def _cleanup(self):
-        """
-        Removes stale entries from the cache to prevent it from growing indefinitely.
-        """
-        stale_keys = []
-        # Find all stale keys
-        for page_id, timestamp in self._cache.items():
-            if time.time() - timestamp > self._ttl:
-                stale_keys.append(page_id)
-
-        # Remove stale keys
-        for key in stale_keys:
-            if key in self._cache:
-                del self._cache[key]
-                logging.debug(f"Removed stale page_id {key} from cache.")
+        try:
+            cache_key = f"webhook_cache:{page_id}"
+            await self.redis.setex(cache_key, self._ttl, "1")
+            logging.info(f"Page {page_id} added to Redis webhook cache.")
+        except Exception as e:
+            logging.error(f"Redis cache add failed: {e}")
 
 # Global instance of the webhook cache
 webhook_cache = WebhookCache()
