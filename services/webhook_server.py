@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 try:
-    from fastapi import FastAPI, Request, HTTPException
+    from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
     from fastapi.responses import JSONResponse
     FASTAPI_AVAILABLE = True
 except ImportError:
@@ -21,16 +21,12 @@ else:
     app = None
 
 # Enhanced logging configuration using standard logging since system_monitor returns structlog config
-try:
-    from monitoring.system_monitor import get_system_monitor
-    logger = get_system_monitor()
-except ImportError:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        stream=sys.stdout
-    )
-    logger = logging.getLogger("webhook_server")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger("webhook_server")
 
 def check_environment_variables():
     """Check all required environment variables"""
@@ -104,7 +100,7 @@ def initialize_server():
 
 if FASTAPI_AVAILABLE:
     @app.post("/webhook/notion")
-    async def handle_unified_notion_webhook(request: Request):
+    async def handle_unified_notion_webhook(request: Request, background_tasks: BackgroundTasks):
         webhook_data = await request.json()
         
         if not webhook_data:
@@ -153,21 +149,19 @@ if FASTAPI_AVAILABLE:
         logger.info(f"Detected workflow type: {workflow_type}")
         
         if workflow_type == "outfit":
-            # Fire and forget / background task might be preferable, but we'll await directly 
-            # Or we can create an asyncio task so it doesn't block Webhook response.
-            asyncio.create_task(handle_outfit_workflow(page_id))
+            background_tasks.add_task(handle_outfit_workflow, page_id)
             return {"message": "Outfit workflow triggered", "workflow": "outfit"}
         elif workflow_type == "travel":
-            asyncio.create_task(handle_travel_workflow(page_id))
+            background_tasks.add_task(handle_travel_workflow, page_id)
             return {"message": "Travel workflow triggered", "workflow": "travel"}
         elif workflow_type == "laundry_day":
-            asyncio.create_task(handle_laundry_day_workflow(page_id))
+            background_tasks.add_task(handle_laundry_day_workflow, page_id)
             return {"message": "Laundry day workflow triggered", "workflow": "laundry_day"}
         elif workflow_type == "hamper":
-            asyncio.create_task(handle_hamper_workflow(page_id))
+            background_tasks.add_task(handle_hamper_workflow, page_id)
             return {"message": "Hamper workflow triggered", "workflow": "hamper"}
         elif workflow_type == "dirty_unchecked":
-            asyncio.create_task(handle_dirty_unchecked_workflow(page_id))
+            background_tasks.add_task(handle_dirty_unchecked_workflow, page_id)
             return {"message": "Dirty unchecked workflow triggered", "workflow": "dirty_unchecked"}
         else:
             return {"message": "No workflow conditions met"}
