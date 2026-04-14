@@ -106,7 +106,7 @@ if FASTAPI_AVAILABLE:
         if not webhook_data:
             return JSONResponse({"error": "No JSON data received"}, status_code=400)
         
-        logger.info(f"Received unified webhook", webhook_data=webhook_data)
+        logger.info(f"Received unified webhook: {webhook_data}")
         
         if "challenge" in webhook_data:
             return {"challenge": webhook_data["challenge"]}
@@ -140,7 +140,7 @@ if FASTAPI_AVAILABLE:
                 return {"message": "Event from bot, ignoring"}
 
         except Exception as e:
-            logger.error(f"Failed to validate page for {page_id}", error=str(e))
+            logger.error(f"Failed to validate page for {page_id}. Error: {e}")
             return JSONResponse({"error": "Failed to validate page"}, status_code=500)
         
         await webhook_cache.add(page_id)
